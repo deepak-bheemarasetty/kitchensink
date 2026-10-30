@@ -1,5 +1,5 @@
 /*
- * JBoss, Home of Professional Open Source
+ * Kitchen Sink application source
  * Copyright 2015, Red Hat, Inc. and/or its affiliates, and individual
  * contributors by the @authors tag. See the copyright.txt in the
  * distribution for a full listing of individual contributors.
@@ -14,25 +14,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.jboss.as.quickstarts.kitchensink;
+package com.kitchensink;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
-/**
- * Spring Boot entry point.
- *
- * <p>{@code @SpringBootApplication} combines:
- * <ul>
- *   <li>{@code @Configuration} — this class is a source of bean definitions</li>
- *   <li>{@code @EnableAutoConfiguration} — auto-configure the context based on classpath
- *       (H2 detected → datasource; Spring MVC detected → DispatcherServlet; etc.)</li>
- *   <li>{@code @ComponentScan} — scan this package and sub-packages for Spring-managed
- *       components ({@code @Service}, {@code @Repository}, {@code @RestController}, …)</li>
- * </ul>
- *
- * <p>Replaces hundreds of lines of XML configuration that JBoss EAP managed implicitly.
- */
+/** Starts the Kitchen Sink Spring Boot application. */
 @SpringBootApplication
 public class KitchensinkApplication {
 
