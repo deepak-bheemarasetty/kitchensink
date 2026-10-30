@@ -92,13 +92,13 @@ These are local development settings. The console and credentials are not intend
 
 ## Tests
 
-Run the JUnit 5 suite:
+Run the JUnit 5 suite and enforce 100% line and branch coverage for application code:
 
 ```shell
-mvn test
+mvn verify
 ```
 
-The suite covers controller responses and validation, registration rules, and repository queries against isolated in-memory H2 databases.
+The suite covers application startup, controller responses and validation, registration rules, and repository queries against isolated in-memory H2 databases. The generated JPA static metamodel is excluded from coverage because it is compiler-generated code. JaCoCo writes an HTML coverage report to `target/site/jacoco/index.html`.
 
 ## Configuration
 
