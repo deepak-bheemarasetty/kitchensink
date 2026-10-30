@@ -14,16 +14,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.kitchensink;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
-/** Starts the Kitchen Sink Spring Boot application. */
+/**
+ * Entry point for the Kitchen Sink Spring Boot application.
+ *
+ * @author Deepak Bheemarasetty
+ */
 @SpringBootApplication
 public class KitchensinkApplication {
 
-    public static void main(String[] args) {
-        SpringApplication.run(KitchensinkApplication.class, args);
-    }
+  public static void main(String[] args) {
+    SpringApplication.run(KitchensinkApplication.class, args);
+  }
 }

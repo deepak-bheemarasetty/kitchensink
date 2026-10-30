@@ -2,6 +2,8 @@
 
 Kitchen Sink is a Spring Boot REST application for managing member registrations. It provides endpoints to list members, retrieve a member by ID, and register a member. Member data is stored with Spring Data JPA in an in-memory H2 database.
 
+Project author: Deepak Bheemarasetty.
+
 ## Requirements
 
 - JDK 21
@@ -73,9 +75,9 @@ A successful registration returns `201 Created`, the saved member as JSON, and a
 
 ### Member validation
 
-- `name` is required, must contain 1–25 characters, and cannot contain digits.
+- `name` is required, must contain 1 to 25 letters and spaces, and cannot contain digits or special characters.
 - `email` is required and must be a valid email address.
-- `phoneNumber` is required and must contain 10–12 digits.
+- `phoneNumber` is required and must contain 8 to 12 digits.
 - Email addresses must be unique.
 
 ## H2 console
@@ -89,6 +91,14 @@ Use these connection settings:
 - Password: `sa`
 
 These are local development settings. The console and credentials are not intended as a production database setup.
+
+## Code style
+
+The Maven build checks application and test Java sources against the Google Checkstyle rules. The check runs during Maven's `validate` phase and fails the build when it finds a warning or error. Run the style check by itself with:
+
+```shell
+mvn validate
+```
 
 ## Tests
 
