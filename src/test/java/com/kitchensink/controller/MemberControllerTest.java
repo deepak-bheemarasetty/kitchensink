@@ -1,7 +1,10 @@
 package com.kitchensink.controller;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentCaptor.forClass;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -37,21 +40,30 @@ class MemberControllerTest {
     @Test
     void listMembersReturnsMembersOrderedByName() throws Exception {
         Member member = member("Jane Doe", "jane@example.com");
+        member.setId(0L);
         when(memberRepository.findAllByOrderByNameAsc()).thenReturn(List.of(member));
 
         mockMvc.perform(get("/rest/members"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].name").value("Jane Doe"));
+                .andExpect(jsonPath("$[0].id").value(0))
+                .andExpect(jsonPath("$[0].name").value("Jane Doe"))
+                .andExpect(jsonPath("$[0].email").value("jane@example.com"))
+                .andExpect(jsonPath("$[0].phoneNumber").value("2125551234"))
+                .andExpect(jsonPath("$[0].password").doesNotExist());
     }
 
     @Test
     void getMemberReturnsMemberWhenPresent() throws Exception {
         Member member = member("Jane Doe", "jane@example.com");
+        member.setId(7L);
         when(memberRepository.findById(7L)).thenReturn(Optional.of(member));
 
         mockMvc.perform(get("/rest/members/7"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.email").value("jane@example.com"));
+                .andExpect(jsonPath("$.id").value(7))
+                .andExpect(jsonPath("$.name").value("Jane Doe"))
+                .andExpect(jsonPath("$.email").value("jane@example.com"))
+                .andExpect(jsonPath("$.phoneNumber").value("2125551234"));
     }
 
     @Test
@@ -73,7 +85,16 @@ class MemberControllerTest {
                                 """))
                 .andExpect(status().isCreated())
                 .andExpect(header().string("Location", "http://localhost/rest/members/7"))
-                .andExpect(jsonPath("$.id").value(7));
+                .andExpect(jsonPath("$.id").value(7))
+                .andExpect(jsonPath("$.name").value("Jane Doe"))
+                .andExpect(jsonPath("$.email").value("jane@example.com"))
+                .andExpect(jsonPath("$.phoneNumber").value("2125551234"));
+
+        var memberCaptor = forClass(Member.class);
+        verify(memberService).register(memberCaptor.capture());
+        assertThat(memberCaptor.getValue().getName()).isEqualTo("Jane Doe");
+        assertThat(memberCaptor.getValue().getEmail()).isEqualTo("jane@example.com");
+        assertThat(memberCaptor.getValue().getPhoneNumber()).isEqualTo("2125551234");
     }
 
     @Test
@@ -94,6 +115,26 @@ class MemberControllerTest {
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.phoneNumber").exists());
+    }
+
+    @Test
+    void createMemberWithDigitsInNameReturnsResolvedValidationMessage() throws Exception {
+        mockMvc.perform(post("/rest/members").contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"Jane1","email":"jane@example.com","phoneNumber":"2125551234"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.name").value("Name may contain only letters and spaces"));
+    }
+
+    @Test
+    void createMemberWithSpecialCharactersInNameReturnsValidationError() throws Exception {
+        mockMvc.perform(post("/rest/members").contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"Jane-Doe!","email":"jane@example.com","phoneNumber":"2125551234"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.name").value("Name may contain only letters and spaces"));
     }
 
     @Test

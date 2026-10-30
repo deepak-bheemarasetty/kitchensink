@@ -43,7 +43,7 @@ public class Member implements Serializable {
 
     @NotNull
     @Size(min = 1, max = 25)
-    @Pattern(regexp = "[^0-9]*", message = "{name_validation_message}")
+    @Pattern(regexp = "[\\p{L} ]+", message = "{name_validation_message}")
     private String name;
 
     @NotNull
