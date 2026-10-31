@@ -37,7 +37,7 @@ if ($service.Status -ne "Running") { Start-Service MongoDB }
 Get-Service MongoDB
 ```
 
-Seed the sample member from the project root. This command is safe to run more than once:
+Seed 75 sample members from the project root. This command is safe to run more than once and does not overwrite existing member records:
 
 ```powershell
 mongosh "mongodb://localhost:27017/kitchensink" scripts/seed-members.js
@@ -49,15 +49,15 @@ The application defaults to `mongodb://localhost:27017/kitchensink` and listens 
 $env:MONGODB_URI = "mongodb://localhost:27017/kitchensink"
 ```
 
-Spring Security creates a `user` account with a randomly generated password when no credentials are configured; the password appears in the startup log. Alternatively, set local credentials before starting the app:
+For local development, the default HTTP Basic credentials are username `demo.user@gmail.com` and password `password@001`. All browser pages, static assets, and API endpoints require authentication. Override the defaults before starting the app when using a different device or environment:
 
 ```powershell
-$env:SPRING_SECURITY_USER_NAME = "demo"
-$env:SPRING_SECURITY_USER_PASSWORD = "replace-with-a-local-password"
+$env:SPRING_SECURITY_USER_NAME = "your-local-username"
+$env:SPRING_SECURITY_USER_PASSWORD = "your-local-password"
 mvn spring-boot:run
 ```
 
-If you set a username such as `demo`, use that same username in API requests. Stop the application with `Ctrl+C`. Do not use demo credentials in production; supply credentials through a secrets manager or environment variables.
+Do not use the documented defaults outside this local development setup; configure credentials through environment variables or a secrets manager.
 
 To build and run the executable JAR instead:
 
@@ -72,19 +72,27 @@ The application uses port `9080` by default. You can override it at startup, for
 java -jar target/kitchensink.jar --server.port=9081
 ```
 
+## Browser UI
+
+The browser UI has two main pages:
+
+- `/` shows the member registration form and up to five most-viewed members from an in-memory cache. The cache starts empty on application startup and is populated as member details are viewed; it resets when the application restarts.
+- `/members` shows a two-pane member browser: the paginated, searchable list is on the left and selected member details are on the right. The list is ordered by name and loads 20 records per MongoDB page.
+- Selecting a member name opens its details in the right pane and increments its in-memory view count. Phone numbers are only shown in the details pane.
+
+The All Members page supports exact email search, shows only the match with its details, and offers a clear-search link to restore the full paginated list. An unsuccessful search displays a dismissible warning. Member list rows show only name and email. The home-page form validates name, email, and phone in the browser as the user types and blocks invalid submissions; server-side validation remains enabled as a safety net. Pages use Thymeleaf and are available in a browser on the same machine as the app.
+
 ## Member API
 
 All endpoints use the `/rest/members` path and exchange JSON.
 
-For the API examples below, use the same credentials configured when starting the application. If you used the example `demo` username, create the Basic Authentication header once in PowerShell:
+For the API examples below, create the Basic Authentication header using the configured credentials. For the local defaults:
 
 ```powershell
-$pair = "demo:replace-with-a-local-password"
+$pair = "demo.user@gmail.com:password@001"
 $encoded = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes($pair))
 $headers = @{ Authorization = "Basic $encoded" }
 ```
-
-If you did not set credentials yourself, use username `user` and the generated password printed in the application startup log instead.
 
 ### List members
 

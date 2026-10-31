@@ -54,7 +54,7 @@ class MemberServiceTest {
     assertThatThrownBy(() -> memberService.register(member))
         .isInstanceOf(DuplicateEmailException.class)
         .hasMessageContaining(member.getEmail());
-
+    verify(memberRepository, never()).save(member);
     verify(memberRepository, never()).save(member);
   }
 }
