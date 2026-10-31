@@ -59,6 +59,45 @@ mvn spring-boot:run
 
 If you set a username such as `demo`, use that same username in API requests. Stop the application with `Ctrl+C`. Do not use demo credentials in production; supply credentials through a secrets manager or environment variables.
 
+## Run with Docker Compose
+
+Docker Desktop with its Compose plugin is required. Start Docker Desktop and wait for its engine to be ready, then verify both commands work:
+
+```powershell
+docker --version
+docker compose version
+docker info
+```
+
+The Docker setup runs both the application and MongoDB in containers; you do not need to install Java, Maven, or MongoDB on the Docker host. The Compose file publishes MongoDB on host port `27018` to avoid conflicts with a local MongoDB service on the usual port `27017`.
+
+Clone this branch on a new machine, or switch an existing checkout to it:
+
+```powershell
+git clone --branch migration-docker https://github.com/deepak-bheemarasetty/kitchensink.git
+Set-Location kitchensink
+```
+
+For an existing checkout, run `git switch migration-docker` from the repository root instead. Build the application image and start both services:
+
+```powershell
+docker compose up --build
+```
+
+Compose waits for MongoDB's health check before starting the application. The app is available at `http://localhost:9080`. MongoDB seeds the sample member when its data volume is first initialized. Spring Security generates a development password and prints it in the application logs; the foreground `up` output shows it, or use a second terminal to run:
+
+```powershell
+docker compose logs app
+```
+
+Use username `user` and that generated password with the authenticated API examples below. Stop the foreground Compose process with `Ctrl+C`, then run `docker compose down` to remove the containers and network. Member data is stored in the `mongo_data` named volume and remains when containers are removed. To permanently delete that database and its seeded/member data too, run:
+
+```powershell
+docker compose down --volumes
+```
+
+The application connects to MongoDB over the private Compose network. If you want to connect to the containerized MongoDB from a host tool, use `mongodb://localhost:27018/kitchensink`.
+
 To build and run the executable JAR instead:
 
 ```shell
@@ -76,15 +115,13 @@ java -jar target/kitchensink.jar --server.port=9081
 
 All endpoints use the `/rest/members` path and exchange JSON.
 
-For the API examples below, use the same credentials configured when starting the application. If you used the example `demo` username, create the Basic Authentication header once in PowerShell:
+For the API examples below, set the username and password configured when starting the application, then create the Basic Authentication header once in PowerShell. For Docker Compose, the username is `user` and the password is the generated value printed in the application logs:
 
 ```powershell
-$pair = "demo:replace-with-a-local-password"
+$pair = "user:YOUR_PASSWORD"
 $encoded = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes($pair))
 $headers = @{ Authorization = "Basic $encoded" }
 ```
-
-If you did not set credentials yourself, use username `user` and the generated password printed in the application startup log instead.
 
 ### List members
 
