@@ -15,7 +15,10 @@ class KitchensinkApplicationTest {
     assertThatCode(
             () ->
                 KitchensinkApplication.main(
-                    new String[] {"--spring.main.web-application-type=none"}))
+                    new String[] {
+                      "--spring.main.web-application-type=none",
+                      "--spring.data.mongodb.auto-index-creation=false"
+                    }))
         .doesNotThrowAnyException();
   }
 }

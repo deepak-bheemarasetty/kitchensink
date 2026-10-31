@@ -5,7 +5,6 @@ import com.kitchensink.repository.MemberRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Applies business rules for member registration.
@@ -13,7 +12,6 @@ import org.springframework.transaction.annotation.Transactional;
  * @author Deepak Bheemarasetty
  */
 @Service
-@Transactional
 public class MemberService {
   private static final Logger log = LoggerFactory.getLogger(MemberService.class);
   private final MemberRepository memberRepository;

@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.kitchensink.config.SecurityConfiguration;
 import com.kitchensink.model.Member;
 import com.kitchensink.repository.MemberRepository;
 import com.kitchensink.service.DuplicateEmailException;
@@ -19,9 +20,12 @@ import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.MediaType;
+import org.springframework.security.test.context.support.WithAnonymousUser;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -31,6 +35,8 @@ import org.springframework.test.web.servlet.MockMvc;
  * @author Deepak Bheemarasetty
  */
 @WebMvcTest(MemberController.class)
+@Import(SecurityConfiguration.class)
+@WithMockUser
 class MemberControllerTest {
   @Autowired private MockMvc mockMvc;
 
@@ -41,13 +47,13 @@ class MemberControllerTest {
   @Test
   void listMembersReturnsMembersOrderedByName() throws Exception {
     Member member = member("Jane Doe", "jane@example.com");
-    member.setId(0L);
+    member.setId("507f1f77bcf86cd799439011");
     when(memberRepository.findAllByOrderByNameAsc()).thenReturn(List.of(member));
 
     mockMvc
         .perform(get("/rest/members"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$[0].id").value(0))
+        .andExpect(jsonPath("$[0].id").value("507f1f77bcf86cd799439011"))
         .andExpect(jsonPath("$[0].name").value("Jane Doe"))
         .andExpect(jsonPath("$[0].email").value("jane@example.com"))
         .andExpect(jsonPath("$[0].phoneNumber").value("2125551234"))
@@ -57,13 +63,13 @@ class MemberControllerTest {
   @Test
   void getMemberReturnsMemberWhenPresent() throws Exception {
     Member member = member("Jane Doe", "jane@example.com");
-    member.setId(7L);
-    when(memberRepository.findById(7L)).thenReturn(Optional.of(member));
+    member.setId("507f1f77bcf86cd799439017");
+    when(memberRepository.findById("507f1f77bcf86cd799439017")).thenReturn(Optional.of(member));
 
     mockMvc
-        .perform(get("/rest/members/7"))
+        .perform(get("/rest/members/507f1f77bcf86cd799439017"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.id").value(7))
+        .andExpect(jsonPath("$.id").value("507f1f77bcf86cd799439017"))
         .andExpect(jsonPath("$.name").value("Jane Doe"))
         .andExpect(jsonPath("$.email").value("jane@example.com"))
         .andExpect(jsonPath("$.phoneNumber").value("2125551234"));
@@ -71,15 +77,15 @@ class MemberControllerTest {
 
   @Test
   void getMemberReturnsNotFoundWhenMissing() throws Exception {
-    when(memberRepository.findById(999L)).thenReturn(Optional.empty());
+    when(memberRepository.findById("507f1f77bcf86cd799439999")).thenReturn(Optional.empty());
 
-    mockMvc.perform(get("/rest/members/999")).andExpect(status().isNotFound());
+    mockMvc.perform(get("/rest/members/507f1f77bcf86cd799439999")).andExpect(status().isNotFound());
   }
 
   @Test
   void createMemberReturnsCreatedAndLocation() throws Exception {
     Member member = member("Jane Doe", "jane@example.com");
-    member.setId(7L);
+    member.setId("507f1f77bcf86cd799439017");
     when(memberService.register(any(Member.class))).thenReturn(member);
 
     mockMvc
@@ -91,8 +97,10 @@ class MemberControllerTest {
                     {"name":"Jane Doe","email":"jane@example.com","phoneNumber":"2125551234"}
                     """))
         .andExpect(status().isCreated())
-        .andExpect(header().string("Location", "http://localhost/rest/members/7"))
-        .andExpect(jsonPath("$.id").value(7))
+        .andExpect(
+            header().string(
+                "Location", "http://localhost/rest/members/507f1f77bcf86cd799439017"))
+        .andExpect(jsonPath("$.id").value("507f1f77bcf86cd799439017"))
         .andExpect(jsonPath("$.name").value("Jane Doe"))
         .andExpect(jsonPath("$.email").value("jane@example.com"))
         .andExpect(jsonPath("$.phoneNumber").value("2125551234"));
@@ -102,6 +110,12 @@ class MemberControllerTest {
     assertThat(memberCaptor.getValue().getName()).isEqualTo("Jane Doe");
     assertThat(memberCaptor.getValue().getEmail()).isEqualTo("jane@example.com");
     assertThat(memberCaptor.getValue().getPhoneNumber()).isEqualTo("2125551234");
+  }
+
+  @Test
+  @WithAnonymousUser
+  void anonymousRequestIsRejected() throws Exception {
+    mockMvc.perform(get("/rest/members")).andExpect(status().isUnauthorized());
   }
 
   @Test

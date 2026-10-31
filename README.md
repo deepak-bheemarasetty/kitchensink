@@ -1,6 +1,6 @@
 # Kitchen Sink
 
-Kitchen Sink is a Spring Boot REST application for managing member registrations. It provides endpoints to list members, retrieve a member by ID, and register a member. Member data is stored with Spring Data JPA in an in-memory H2 database.
+Kitchen Sink is a Spring Boot REST application for managing member registrations. It provides endpoints to list members, retrieve a member by ID, and register a member. Member data is stored as MongoDB documents using Spring Data MongoDB. All member endpoints require HTTP Basic authentication.
 
 Project author: Deepak Bheemarasetty.
 
@@ -8,25 +8,56 @@ Project author: Deepak Bheemarasetty.
 
 - JDK 21
 - Maven 3.9 or later
+- MongoDB Community Server 8.0 or later
+- MongoDB Shell (`mongosh`)
 
-Confirm Java and Maven are available:
+If Java or MongoDB is not installed, install the Windows packages:
 
-```shell
+```powershell
+winget install --id Microsoft.OpenJDK.21 --exact
+winget install --id MongoDB.Server --exact
+winget install --id MongoDB.Shell --exact
+```
+
+Install [Maven 3.9 or later](https://maven.apache.org/install.html) separately if it is not already installed. Open a new PowerShell window after installing tools so it picks up their updated `PATH`, then verify:
+
+```powershell
 java -version
 mvn -version
+mongosh --version
 ```
 
 ## Run locally
 
-From the project root, start the application with:
+The installer normally configures MongoDB as a Windows service. Start it if it is not already running:
 
-```shell
+```powershell
+$service = Get-Service MongoDB
+if ($service.Status -ne "Running") { Start-Service MongoDB }
+Get-Service MongoDB
+```
+
+Seed the sample member from the project root. This command is safe to run more than once:
+
+```powershell
+mongosh "mongodb://localhost:27017/kitchensink" scripts/seed-members.js
+```
+
+The application defaults to `mongodb://localhost:27017/kitchensink` and listens on `http://localhost:9080`. Set `MONGODB_URI` if your local MongoDB uses a different connection string. For example:
+
+```powershell
+$env:MONGODB_URI = "mongodb://localhost:27017/kitchensink"
+```
+
+Spring Security creates a `user` account with a randomly generated password when no credentials are configured; the password appears in the startup log. Alternatively, set local credentials before starting the app:
+
+```powershell
+$env:SPRING_SECURITY_USER_NAME = "demo"
+$env:SPRING_SECURITY_USER_PASSWORD = "replace-with-a-local-password"
 mvn spring-boot:run
 ```
 
-The application listens on `http://localhost:9080`. Stop it with `Ctrl+C`.
-
-H2 is in memory and belongs to this application process. Its data is cleared when the application stops. Each running application has its own in-memory database.
+If you set a username such as `demo`, use that same username in API requests. Stop the application with `Ctrl+C`. Do not use demo credentials in production; supply credentials through a secrets manager or environment variables.
 
 To build and run the executable JAR instead:
 
@@ -45,30 +76,48 @@ java -jar target/kitchensink.jar --server.port=9081
 
 All endpoints use the `/rest/members` path and exchange JSON.
 
+For the API examples below, use the same credentials configured when starting the application. If you used the example `demo` username, create the Basic Authentication header once in PowerShell:
+
+```powershell
+$pair = "demo:replace-with-a-local-password"
+$encoded = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes($pair))
+$headers = @{ Authorization = "Basic $encoded" }
+```
+
+If you did not set credentials yourself, use username `user` and the generated password printed in the application startup log instead.
+
 ### List members
 
-Returns members ordered by name:
+Returns members ordered by name. In PowerShell, use:
 
-```shell
-curl http://localhost:9080/rest/members
+```powershell
+Invoke-RestMethod -Uri "http://localhost:9080/rest/members" -Headers $headers
 ```
 
 ### Get a member
 
-Returns the member with the requested numeric ID. The seeded member has ID `0`:
+Returns the member with the requested MongoDB ObjectId. To get an ID, list the members:
 
-```shell
-curl http://localhost:9080/rest/members/0
+```powershell
+$members = Invoke-RestMethod -Uri "http://localhost:9080/rest/members" -Headers $headers
+$members
+$memberId = $members[0].id
+Invoke-RestMethod -Uri "http://localhost:9080/rest/members/$memberId" -Headers $headers
 ```
 
 ### Register a member
 
 Send a name, email, and phone number:
 
-```shell
-curl -i -X POST http://localhost:9080/rest/members \
-  -H 'Content-Type: application/json' \
-  -d '{"name":"Jane Doe","email":"jane@example.com","phoneNumber":"2125551234"}'
+```powershell
+$member = @{
+    name = "Jane Doe"
+    email = "jane@example.com"
+    phoneNumber = "2125551234"
+} | ConvertTo-Json
+Invoke-RestMethod -Uri "http://localhost:9080/rest/members" -Method Post `
+    -Headers $headers `
+    -ContentType "application/json" -Body $member
 ```
 
 A successful registration returns `201 Created`, the saved member as JSON, and a `Location` header for the new member. The API returns `400 Bad Request` with field errors when validation fails, `404 Not Found` when a requested ID does not exist, and `409 Conflict` when the email is already registered or another data integrity constraint is violated.
@@ -80,17 +129,7 @@ A successful registration returns `201 Created`, the saved member as JSON, and a
 - `phoneNumber` is required and must contain 8 to 12 digits.
 - Email addresses must be unique.
 
-## H2 console
-
-While the application is running, the H2 console is available at `http://localhost:9080/h2-console`.
-
-Use these connection settings:
-
-- JDBC URL: `jdbc:h2:mem:kitchensink`
-- Username: `sa`
-- Password: `sa`
-
-These are local development settings. The console and credentials are not intended as a production database setup.
+The API uses stateless HTTP Basic authentication. Requests without valid credentials receive `401 Unauthorized`. CSRF protection is disabled because the API is stateless and does not use browser sessions.
 
 ## Code style
 
@@ -108,8 +147,8 @@ Run the JUnit 5 suite and enforce 100% line and branch coverage for application 
 mvn verify
 ```
 
-The suite covers application startup, controller responses and validation, registration rules, and repository queries against isolated in-memory H2 databases. The generated JPA static metamodel is excluded from coverage because it is compiler-generated code. JaCoCo writes an HTML coverage report to `target/site/jacoco/index.html`.
+The suite covers application startup, authentication, controller responses and validation, registration rules, and MongoDB document mapping. Unit tests do not require a running MongoDB server. For an end-to-end local check, start MongoDB and the app as described above, then exercise the authenticated API with the examples. JaCoCo writes an HTML coverage report to `target/site/jacoco/index.html`.
 
 ## Configuration
 
-Application settings are in `src/main/resources/application.properties`. The HTTP port, H2 connection, schema lifecycle, and H2 console are configured there. Hibernate creates the schema at startup and drops it when the application stops.
+Application settings are in `src/main/resources/application.properties`. The MongoDB URI is read from `MONGODB_URI`, with a local MongoDB default. Spring Data creates the unique email index when the application connects to MongoDB.

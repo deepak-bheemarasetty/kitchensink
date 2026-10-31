@@ -17,19 +17,16 @@
 
 package com.kitchensink.model;
 
-import java.io.Serializable;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import java.io.Serializable;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.mongodb.core.mapping.Document;
 
 /**
  * Persistent member details and their validation constraints.
@@ -37,30 +34,28 @@ import jakarta.validation.constraints.Size;
  * @author Deepak Bheemarasetty
  */
 @SuppressWarnings("serial")
-@Entity
-@Table(uniqueConstraints = @UniqueConstraint(columnNames = "email"))
+@Document(collection = "members")
 public class Member implements Serializable {
 
-  @Id @GeneratedValue private Long id;
+  @Id private String id;
 
   @NotNull
   @Size(min = 1, max = 25)
   @Pattern(regexp = "[\\p{L} ]+", message = "{name_validation_message}")
   private String name;
 
-  @NotNull @NotEmpty @Email private String email;
+  @NotNull @NotEmpty @Email @Indexed(unique = true) private String email;
 
   @NotNull
   @Size(min = 10, max = 12)
   @Digits(fraction = 0, integer = 12)
-  @Column(name = "phone_number")
   private String phoneNumber;
 
-  public Long getId() {
+  public String getId() {
     return id;
   }
 
-  public void setId(Long id) {
+  public void setId(String id) {
     this.id = id;
   }
 

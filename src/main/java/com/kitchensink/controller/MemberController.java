@@ -28,7 +28,7 @@ public class MemberController {
    *
    * @author Deepak Bheemarasetty
    */
-  public record MemberResponse(Long id, String name, String email, String phoneNumber) {}
+  public record MemberResponse(String id, String name, String email, String phoneNumber) {}
 
   private final MemberRepository memberRepository;
   private final MemberService memberService;
@@ -46,7 +46,7 @@ public class MemberController {
 
   /** Looks up a member by its identifier. */
   @GetMapping("/{id}")
-  public ResponseEntity<MemberResponse> lookupMemberById(@PathVariable("id") Long id) {
+  public ResponseEntity<MemberResponse> lookupMemberById(@PathVariable("id") String id) {
     return memberRepository
         .findById(id)
         .map(this::toResponse)
