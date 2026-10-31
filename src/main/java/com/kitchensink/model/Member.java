@@ -25,6 +25,7 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.io.Serializable;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
@@ -34,6 +35,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
  * @author Deepak Bheemarasetty
  */
 @SuppressWarnings("serial")
+@CompoundIndex(name = "member_name_email_cursor", def = "{'name': 1, 'email': 1}")
 @Document(collection = "members")
 public class Member implements Serializable {
 

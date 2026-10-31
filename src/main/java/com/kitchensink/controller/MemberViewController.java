@@ -5,14 +5,12 @@ import com.kitchensink.model.Member;
 import com.kitchensink.repository.MemberRepository;
 import com.kitchensink.service.DuplicateEmailException;
 import com.kitchensink.service.FeaturedMemberCacheService;
+import com.kitchensink.service.MemberPaginationService;
+import com.kitchensink.service.MemberPaginationService.MemberCursorPage;
 import com.kitchensink.service.MemberService;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Optional;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
@@ -25,20 +23,21 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 /** Renders the browser-based member management pages. */
 @Controller
 public class MemberViewController {
-  private static final int PAGE_SIZE = 20;
-
   private final MemberRepository memberRepository;
   private final MemberService memberService;
   private final FeaturedMemberCacheService featuredMemberCacheService;
+  private final MemberPaginationService memberPaginationService;
 
   /** Creates the browser controller with member persistence and in-memory featured caching. */
   public MemberViewController(
       MemberRepository memberRepository,
       MemberService memberService,
-      FeaturedMemberCacheService featuredMemberCacheService) {
+      FeaturedMemberCacheService featuredMemberCacheService,
+      MemberPaginationService memberPaginationService) {
     this.memberRepository = memberRepository;
     this.memberService = memberService;
     this.featuredMemberCacheService = featuredMemberCacheService;
+    this.memberPaginationService = memberPaginationService;
   }
 
   /** Shows the registration form and cached most-viewed members. */
@@ -52,28 +51,36 @@ public class MemberViewController {
   /** Lists all members in the browser UI. */
   @GetMapping("/members")
   public String listMembers(
-      @RequestParam(defaultValue = "0") int page,
+      @RequestParam(required = false) String afterName,
+      @RequestParam(required = false) String afterEmail,
+      @RequestParam(required = false) String beforeName,
+      @RequestParam(required = false) String beforeEmail,
       @RequestParam(required = false) String email,
       @RequestParam(required = false) String selected,
       Model model) {
+    model.addAttribute("afterName", afterName);
+    model.addAttribute("afterEmail", afterEmail);
+    model.addAttribute("beforeName", beforeName);
+    model.addAttribute("beforeEmail", beforeEmail);
     String searchEmail = email == null ? "" : email.trim();
-    Page<Member> members;
+    MemberCursorPage memberPage = null;
+    List<Member> members;
     if (!searchEmail.isEmpty()) {
-      Optional<Member> match = memberRepository.findByEmailIgnoreCase(searchEmail);
-      members = new PageImpl<>(match.map(List::of).orElseGet(List::of));
+      Optional<Member> match = memberRepository.findByEmail(searchEmail);
+      members = match.map(List::of).orElseGet(List::of);
       model.addAttribute("searchEmail", searchEmail);
       model.addAttribute("searchNotFound", match.isEmpty());
       selected = match.map(Member::getId).orElse(null);
     } else {
-      members =
-          memberRepository.findAll(
-              PageRequest.of(
-                  Math.max(page, 0), PAGE_SIZE, Sort.by(Sort.Direction.ASC, "name")));
+      memberPage =
+          memberPaginationService.getPage(afterName, afterEmail, beforeName, beforeEmail);
+      members = memberPage.members();
       model.addAttribute("searchEmail", "");
       model.addAttribute("searchNotFound", false);
     }
 
-    model.addAttribute("memberPage", members);
+    model.addAttribute("members", members);
+    model.addAttribute("cursorPage", memberPage);
     model.addAttribute(
         "selectedMember",
         selected == null ? null : featuredMemberCacheService.recordView(selected).orElse(null));

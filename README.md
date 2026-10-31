@@ -77,7 +77,7 @@ java -jar target/kitchensink.jar --server.port=9081
 The browser UI has two main pages:
 
 - `/` shows the member registration form and up to five most-viewed members from an in-memory cache. The cache starts empty on application startup and is populated as member details are viewed; it resets when the application restarts.
-- `/members` shows a two-pane member browser: the paginated, searchable list is on the left and selected member details are on the right. The list is ordered by name and loads 20 records per MongoDB page.
+- `/members` shows a two-pane member browser: the keyset-paginated, searchable list is on the left and selected member details are on the right. The list is ordered by name and email and loads at most 20 records per MongoDB request, plus one lookahead record to determine whether a next page exists. Next/Previous use the last/first `(name, email)` cursor; there is no offset skip, full count query, or numbered page list.
 - Selecting a member name opens its details in the right pane and increments its in-memory view count. Phone numbers are only shown in the details pane.
 
 The All Members page supports exact email search, shows only the match with its details, and offers a clear-search link to restore the full paginated list. An unsuccessful search displays a dismissible warning. Member list rows show only name and email. The home-page form validates name, email, and phone in the browser as the user types and blocks invalid submissions; server-side validation remains enabled as a safety net. Pages use Thymeleaf and are available in a browser on the same machine as the app.

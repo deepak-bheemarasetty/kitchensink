@@ -20,19 +20,16 @@ import com.kitchensink.repository.MemberRepository;
 import com.kitchensink.service.DuplicateEmailException;
 import com.kitchensink.service.FeaturedMemberCacheService;
 import com.kitchensink.service.FeaturedMemberCacheService.CachedMember;
+import com.kitchensink.service.MemberPaginationService;
+import com.kitchensink.service.MemberPaginationService.MemberCursorPage;
 import com.kitchensink.service.MemberService;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 import org.springframework.security.test.context.support.WithAnonymousUser;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -50,6 +47,8 @@ class MemberViewControllerTest {
   @MockitoBean private MemberService memberService;
 
   @MockitoBean private FeaturedMemberCacheService featuredMemberCacheService;
+
+  @MockitoBean private MemberPaginationService memberPaginationService;
 
   @Test
   @WithAnonymousUser
@@ -71,21 +70,21 @@ class MemberViewControllerTest {
         .andExpect(content().string(containsString("Register a Member")))
         .andExpect(content().string(containsString("Show All Members")));
 
-    verify(memberRepository, never()).findAll(any(Pageable.class));
+    verify(memberPaginationService, never()).getPage(null, null, null, null);
   }
 
   @Test
   void allMembersPageShowsOnlyNameEmailAndDetailsLink() throws Exception {
     Member member = member("Jane Doe", "jane@example.com");
     member.setId("member-1");
-    when(memberRepository.findAll(any(Pageable.class)))
-        .thenReturn(new PageImpl<>(List.of(member), PageRequest.of(0, 20), 1));
+    when(memberPaginationService.getPage(null, null, null, null))
+        .thenReturn(new MemberCursorPage(List.of(member), false, false));
 
     mockMvc
         .perform(get("/members"))
         .andExpect(status().isOk())
         .andExpect(view().name("all-members"))
-        .andExpect(model().attributeExists("memberPage"))
+        .andExpect(model().attributeExists("members", "cursorPage"))
         .andExpect(content().string(containsString("Jane Doe")))
         .andExpect(content().string(containsString("jane@example.com")))
         .andExpect(content().string(containsString("Member Details")));
@@ -99,30 +98,25 @@ class MemberViewControllerTest {
   void allMembersPageUsesTwentyMemberPagesAndNavigation() throws Exception {
     Member member = member("Zoe Doe", "zoe@example.com");
     member.setId("member-21");
-    when(memberRepository.findAll(any(Pageable.class)))
-        .thenReturn(new PageImpl<>(List.of(member), PageRequest.of(1, 20), 41));
+    when(memberPaginationService.getPage("Taylor", "t@example.com", null, null))
+        .thenReturn(new MemberCursorPage(List.of(member), true, true));
 
     mockMvc
-        .perform(get("/members").param("page", "1"))
+        .perform(get("/members").param("afterName", "Taylor").param("afterEmail", "t@example.com"))
         .andExpect(status().isOk())
         .andExpect(content().string(containsString("Zoe Doe")))
-        .andExpect(content().string(containsString("page=0")))
-        .andExpect(content().string(containsString("page=2")));
+        .andExpect(content().string(containsString("beforeName=Zoe")))
+        .andExpect(content().string(containsString("afterName=Zoe")));
 
-    ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
-    Mockito.verify(memberRepository).findAll(pageableCaptor.capture());
-    assertThat(pageableCaptor.getValue().getPageSize()).isEqualTo(20);
-    assertThat(pageableCaptor.getValue().getPageNumber()).isEqualTo(1);
-    assertThat(pageableCaptor.getValue().getSort())
-        .isEqualTo(Sort.by(Sort.Direction.ASC, "name"));
+    verify(memberPaginationService).getPage("Taylor", "t@example.com", null, null);
   }
 
   @Test
   void selectingMemberShowsDetailsInRightPaneWithoutLeavingMembersPage() throws Exception {
     Member member = member("Jane Doe", "jane@example.com");
     member.setId("member-1");
-    when(memberRepository.findAll(any(Pageable.class)))
-        .thenReturn(new PageImpl<>(List.of(member), PageRequest.of(0, 20), 1));
+    when(memberPaginationService.getPage(null, null, null, null))
+        .thenReturn(new MemberCursorPage(List.of(member), false, false));
     when(featuredMemberCacheService.recordView("member-1")).thenReturn(Optional.of(member));
 
     mockMvc
@@ -139,7 +133,7 @@ class MemberViewControllerTest {
   void searchingByEmailShowsOnlyMatchingMemberAndItsDetails() throws Exception {
     Member member = member("Jane Doe", "jane@example.com");
     member.setId("member-1");
-    when(memberRepository.findByEmailIgnoreCase("jane@example.com"))
+    when(memberRepository.findByEmail("jane@example.com"))
         .thenReturn(Optional.of(member));
     when(featuredMemberCacheService.recordView("member-1")).thenReturn(Optional.of(member));
 
@@ -151,13 +145,13 @@ class MemberViewControllerTest {
         .andExpect(content().string(containsString("2125551234")))
         .andExpect(content().string(containsString("Clear Search")));
 
-    verify(memberRepository).findByEmailIgnoreCase("jane@example.com");
-    verify(memberRepository, never()).findAll(any(Pageable.class));
+    verify(memberRepository).findByEmail("jane@example.com");
+    verify(memberPaginationService, never()).getPage(null, null, null, null);
   }
 
   @Test
   void unknownEmailShowsDismissibleWarningAndClearSearchLink() throws Exception {
-    when(memberRepository.findByEmailIgnoreCase("missing@example.com"))
+    when(memberRepository.findByEmail("missing@example.com"))
         .thenReturn(Optional.empty());
 
     mockMvc
@@ -170,15 +164,15 @@ class MemberViewControllerTest {
 
   @Test
   void clearingSearchLoadsTheFullPagedMemberList() throws Exception {
-    when(memberRepository.findAll(any(Pageable.class)))
-        .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
+    when(memberPaginationService.getPage(null, null, null, null))
+        .thenReturn(new MemberCursorPage(List.of(), false, false));
 
     mockMvc
         .perform(get("/members"))
         .andExpect(status().isOk())
         .andExpect(view().name("all-members"));
 
-    verify(memberRepository).findAll(any(Pageable.class));
+    verify(memberPaginationService).getPage(null, null, null, null);
   }
 
   @Test
