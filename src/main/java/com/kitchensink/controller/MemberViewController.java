@@ -7,8 +7,10 @@ import com.kitchensink.service.DuplicateEmailException;
 import com.kitchensink.service.FeaturedMemberCacheService;
 import com.kitchensink.service.MemberPaginationService;
 import com.kitchensink.service.MemberPaginationService.MemberCursorPage;
+import com.kitchensink.service.MemberPaginationService.NumberedMemberPage;
 import com.kitchensink.service.MemberService;
 import jakarta.validation.Valid;
+import java.security.Principal;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.stereotype.Controller;
@@ -40,11 +42,35 @@ public class MemberViewController {
     this.memberPaginationService = memberPaginationService;
   }
 
-  /** Shows the registration form and cached most-viewed members. */
+  /** Shows the sign-in page before redirecting the user to Auth0. */
+  @GetMapping("/login")
+  public String showLogin() {
+    return "login";
+  }
+
+  /** Shows member search, cached most-viewed members, and the registration form. */
   @GetMapping("/")
-  public String showHome(Model model) {
+  public String showHome(
+      @RequestParam(required = false) String searchEmail,
+      @RequestParam(required = false) String selected,
+      Principal principal,
+      Model model) {
     model.addAttribute("member", new MemberRequest("", "", ""));
-    populateHomeModel(model);
+    String normalizedSearchEmail = searchEmail == null ? "" : searchEmail.trim();
+    Optional<Member> searchResult =
+        normalizedSearchEmail.isEmpty()
+            ? Optional.empty()
+            : memberRepository.findByEmail(normalizedSearchEmail);
+    searchResult.ifPresent(member -> featuredMemberCacheService.recordView(member.getId()));
+    model.addAttribute("username", principal.getName());
+    model.addAttribute("searchEmail", normalizedSearchEmail);
+    model.addAttribute("searchResult", searchResult.orElse(null));
+    model.addAttribute(
+        "searchNotFound", !normalizedSearchEmail.isEmpty() && searchResult.isEmpty());
+    model.addAttribute("featuredMembers", featuredMemberCacheService.getFeaturedMembers());
+    model.addAttribute(
+        "selectedMember",
+        selected == null ? null : featuredMemberCacheService.recordView(selected).orElse(null));
     return "index";
   }
 
@@ -57,7 +83,12 @@ public class MemberViewController {
       @RequestParam(required = false) String beforeEmail,
       @RequestParam(required = false) String email,
       @RequestParam(required = false) String selected,
+      @RequestParam(defaultValue = "0") int page,
       Model model) {
+    afterName = normalizeCursor(afterName);
+    afterEmail = normalizeCursor(afterEmail);
+    beforeName = normalizeCursor(beforeName);
+    beforeEmail = normalizeCursor(beforeEmail);
     model.addAttribute("afterName", afterName);
     model.addAttribute("afterEmail", afterEmail);
     model.addAttribute("beforeName", beforeName);
@@ -66,15 +97,15 @@ public class MemberViewController {
     MemberCursorPage memberPage = null;
     List<Member> members;
     if (!searchEmail.isEmpty()) {
-      Optional<Member> match = memberRepository.findByEmail(searchEmail);
-      members = match.map(List::of).orElseGet(List::of);
+      NumberedMemberPage filteredPage = memberPaginationService.getNumberedPage(page, searchEmail);
+      members = filteredPage.members();
+      model.addAttribute("numberedPage", filteredPage);
       model.addAttribute("searchEmail", searchEmail);
-      model.addAttribute("searchNotFound", match.isEmpty());
-      selected = match.map(Member::getId).orElse(null);
+      model.addAttribute("searchNotFound", false);
     } else {
-      memberPage =
-          memberPaginationService.getSummaryPage(afterName, afterEmail, beforeName, beforeEmail);
-      members = memberPage.members();
+      NumberedMemberPage numberedPage = memberPaginationService.getNumberedPage(page);
+      members = numberedPage.members();
+      model.addAttribute("numberedPage", numberedPage);
       model.addAttribute("searchEmail", "");
       model.addAttribute("searchNotFound", false);
     }
@@ -93,25 +124,36 @@ public class MemberViewController {
       @Valid @ModelAttribute("member") MemberRequest request,
       BindingResult bindingResult,
       Model model,
+      Principal principal,
       RedirectAttributes redirectAttributes) {
     if (bindingResult.hasErrors()) {
-      populateHomeModel(model);
+      populateHomeModel(model, principal);
       return "index";
     }
 
     try {
-      memberService.register(toEntity(request));
+      Member createdMember = memberService.register(toEntity(request));
+      featuredMemberCacheService.recordView(createdMember.getId());
       redirectAttributes.addFlashAttribute("successMessage", "Member created successfully.");
+      redirectAttributes.addFlashAttribute("createdMember", createdMember);
       return "redirect:/";
     } catch (DuplicateEmailException e) {
-      bindingResult.rejectValue("email", "duplicate.email", e.getMessage());
-      populateHomeModel(model);
+      model.addAttribute("registrationError", e.getMessage());
+      populateHomeModel(model, principal);
       return "index";
     }
   }
 
-  private void populateHomeModel(Model model) {
+  private void populateHomeModel(Model model, Principal principal) {
+    model.addAttribute("username", principal.getName());
+    model.addAttribute("searchEmail", "");
+    model.addAttribute("searchResult", null);
+    model.addAttribute("searchNotFound", false);
     model.addAttribute("featuredMembers", featuredMemberCacheService.getFeaturedMembers());
+  }
+
+  private static String normalizeCursor(String cursor) {
+    return cursor == null || cursor.isBlank() ? null : cursor;
   }
 
   private Member toEntity(MemberRequest request) {

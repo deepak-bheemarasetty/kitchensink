@@ -5,6 +5,7 @@ import static org.mockito.ArgumentCaptor.forClass;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -155,6 +156,18 @@ class MemberControllerTest {
   @WithAnonymousUser
   void anonymousRequestIsRejected() throws Exception {
     mockMvc.perform(get("/rest/members")).andExpect(status().isUnauthorized());
+  }
+
+  @Test
+  @WithAnonymousUser
+  void validJwtCanAccessMemberApi() throws Exception {
+    when(memberPaginationService.getPage(null, null, null, null))
+        .thenReturn(new MemberCursorPage(List.of(), false, false));
+
+    mockMvc
+        .perform(get("/rest/members").with(jwt().jwt(token -> token.subject("auth0|user-1"))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.members").isEmpty());
   }
 
   @Test

@@ -2,75 +2,119 @@
 <html lang="en" xmlns:th="http://www.thymeleaf.org">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Kitchen Sink Members</title>
     <link rel="stylesheet" th:href="@{/css/styles.css}" />
   </head>
   <body>
     <main class="container">
-      <header>
-        <h1>Kitchen Sink Members</h1>
+      <header class="home-header">
+        <div>
+          <h1>Kitchen Sink Members</h1>
+          <p>Manage member registrations and find member details.</p>
+        </div>
+        <div class="header-actions">
+          <p class="greeting">Welcome, <strong th:text="${username}">member</strong></p>
+          <form th:action="@{/logout}" method="post" class="logout-form">
+            <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}" />
+            <button type="submit" class="dialog-close">Sign out</button>
+          </form>
+        </div>
       </header>
 
-      <div th:if="${successMessage != null}" class="alert success" th:text="${successMessage}"></div>
+      <div class="home-layout">
+        <div class="home-left-stack">
+        <section class="home-pane add-pane" aria-labelledby="registration-heading">
+          <h2 id="registration-heading">Create a New Member</h2>
+          <form id="member-registration-form" th:action="@{/members}" th:object="${member}"
+                method="post" novalidate>
+            <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}" />
+            <div th:if="${#fields.hasAnyErrors()}" class="alert error"><ul><li th:each="err : ${#fields.allErrors()}" th:text="${err}"></li></ul></div>
+            <label for="name">Name</label><input id="name" type="text" th:field="*{name}" maxlength="25" required aria-describedby="name-client-error" />
+            <p id="name-client-error" class="client-error" aria-live="polite"></p>
+            <div class="field-error" th:if="${#fields.hasErrors('name')}" th:errors="*{name}"></div>
+            <label for="email">Email</label><input id="email" type="email" th:field="*{email}" required aria-describedby="email-client-error" />
+            <p id="email-client-error" class="client-error" aria-live="polite"></p>
+            <div class="field-error" th:if="${#fields.hasErrors('email')}" th:errors="*{email}"></div>
+            <label for="phoneNumber">Phone Number</label><input id="phoneNumber" type="tel" th:field="*{phoneNumber}" inputmode="numeric" minlength="8" maxlength="12" required aria-describedby="phoneNumber-client-error" />
+            <p id="phoneNumber-client-error" class="client-error" aria-live="polite"></p>
+            <div class="field-error" th:if="${#fields.hasErrors('phoneNumber')}" th:errors="*{phoneNumber}"></div>
+            <button type="submit" class="primary">Create Member</button>
+            <p th:if="${registrationError != null}" class="alert error registration-error" role="alert" th:text="${registrationError}"></p>
+          </form>
+        </section>
 
-      <section aria-labelledby="registration-heading">
-        <h2 id="registration-heading">Register a Member</h2>
-        <form th:action="@{/members}" th:object="${member}" method="post" novalidate>
-          <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}" />
-          <div th:if="${#fields.hasAnyErrors()}" class="alert error">
-            <ul>
-              <li th:each="err : ${#fields.allErrors()}" th:text="${err}"></li>
-            </ul>
-          </div>
+        <section class="home-pane find-pane" aria-labelledby="find-heading">
+          <h2 id="find-heading">Find Individual Members</h2>
+          <form th:action="@{/}" method="get" class="home-search-form">
+            <label class="sr-only" for="emailSearch">Find an individual member by email</label>
+            <input id="emailSearch" name="searchEmail" type="email"
+                   placeholder="Enter the full email for search" th:value="${searchEmail}" />
+            <button type="submit" class="primary">Search</button>
+          </form>
 
-          <label for="name">Name</label>
-          <input id="name" type="text" th:field="*{name}" maxlength="25" required
-                 aria-describedby="name-client-error" />
-          <p id="name-client-error" class="client-error" aria-live="polite"></p>
-          <div class="field-error" th:if="${#fields.hasErrors('name')}" th:errors="*{name}"></div>
+          <p th:if="${searchNotFound}" class="alert error" role="status">
+            No member found with that full email address.
+          </p>
 
-          <label for="email">Email</label>
-          <input id="email" type="email" th:field="*{email}" required
-                 aria-describedby="email-client-error" />
-          <p id="email-client-error" class="client-error" aria-live="polite"></p>
-          <div class="field-error" th:if="${#fields.hasErrors('email')}" th:errors="*{email}"></div>
+          <section th:if="${searchResult != null}" class="home-list"
+                   aria-labelledby="search-results-heading">
+            <h3 id="search-results-heading">Search Results</h3>
+            <table>
+              <thead>
+                <tr><th>Name</th><th>Email</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td th:text="${searchResult.name}">Jane Doe</td>
+                  <td>
+                    <a th:href="@{/(searchEmail=${searchEmail}, selected=${searchResult.id})}"
+                       th:text="${searchResult.email}">jane@example.com</a>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
 
-          <label for="phoneNumber">Phone Number</label>
-          <input id="phoneNumber" type="tel" th:field="*{phoneNumber}" inputmode="numeric"
-                 minlength="8" maxlength="12" required
-                 aria-describedby="phoneNumber-client-error" />
-          <p id="phoneNumber-client-error" class="client-error" aria-live="polite"></p>
-          <div class="field-error" th:if="${#fields.hasErrors('phoneNumber')}"
-               th:errors="*{phoneNumber}"></div>
+          <a class="primary all-members-link" th:href="@{/members}">View All Members</a>
+        </section>
+        </div>
 
-          <button type="submit" class="primary">Create Member</button>
-        </form>
-      </section>
-
-      <section aria-labelledby="featured-members-heading">
-        <h2 id="featured-members-heading">Most Viewed Members</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Email</th>
-              <th>Details</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr th:if="${#lists.isEmpty(featuredMembers)}">
-              <td colspan="3">No members found.</td>
-            </tr>
-            <tr th:each="member : ${featuredMembers}">
-              <td th:text="${member.name}">Jane Doe</td>
-              <td th:text="${member.email}">jane@example.com</td>
-              <td><a th:href="@{/members(selected=${member.id})}">View</a></td>
-            </tr>
-          </tbody>
-        </table>
-        <a class="primary" th:href="@{/members}">Show All Members</a>
-      </section>
+        <section class="home-pane featured-pane" aria-labelledby="featured-members-heading">
+          <h2 id="featured-members-heading">Most Viewed Members</h2>
+          <table><thead><tr><th>Name</th><th>Email</th></tr></thead><tbody>
+            <tr th:if="${#lists.isEmpty(featuredMembers)}"><td colspan="2">No members viewed yet.</td></tr>
+            <tr th:each="member : ${featuredMembers}"><td th:text="${member.name}">Jane Doe</td><td><a th:href="@{/(searchEmail=${searchEmail}, selected=${member.id})}" th:text="${member.email}">jane@example.com</a></td></tr>
+          </tbody></table>
+        </section>
+      </div>
     </main>
+
+    <dialog id="member-details-dialog" class="modal" th:if="${selectedMember != null}">
+      <form method="dialog" class="dialog-close-form">
+        <button type="submit" class="dialog-close" aria-label="Close member details">Close</button>
+      </form>
+      <h2>Member Details</h2>
+      <dl class="detail-list">
+        <div><dt>Name</dt><dd th:text="${selectedMember.name}">Jane Doe</dd></div>
+        <div><dt>Email</dt><dd th:text="${selectedMember.email}">jane@example.com</dd></div>
+        <div><dt>Phone Number</dt><dd th:text="${selectedMember.phoneNumber}">2125551234</dd></div>
+      </dl>
+    </dialog>
+
+    <dialog id="member-created-dialog" class="modal" th:if="${createdMember != null}">
+      <form method="dialog" class="dialog-close-form">
+        <button type="submit" class="dialog-close" aria-label="Close success message">Close</button>
+      </form>
+      <h2 th:text="${successMessage}">Member created successfully.</h2>
+      <dl class="detail-list">
+        <div><dt>Name</dt><dd th:text="${createdMember.name}">Jane Doe</dd></div>
+        <div><dt>Email</dt><dd th:text="${createdMember.email}">jane@example.com</dd></div>
+        <div><dt>Phone Number</dt><dd th:text="${createdMember.phoneNumber}">2125551234</dd></div>
+      </dl>
+    </dialog>
+
     <script th:src="@{/js/member-validation.js}" defer></script>
+    <script th:src="@{/js/home-dialogs.js}" defer></script>
   </body>
 </html>

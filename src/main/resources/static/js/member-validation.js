@@ -1,4 +1,4 @@
-const memberForm = document.querySelector("form");
+const memberForm = document.getElementById("member-registration-form");
 
 if (memberForm) {
   const fields = {
@@ -38,7 +38,10 @@ if (memberForm) {
         if (!value) {
           return "Phone number is required.";
         }
-        if (!/^\d{8,12}$/.test(value)) {
+        if (!/^[0-9]+$/.test(value)) {
+          return "Enter numbers using 0-9 digits only.";
+        }
+        if (value.length < 8 || value.length > 12) {
           return "Phone number must contain 8 to 12 digits.";
         }
         return "";

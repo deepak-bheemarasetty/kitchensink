@@ -15,7 +15,36 @@ import org.springframework.web.server.ResponseStatusException;
 /** Provides index-backed keyset pagination for the member directory. */
 @Service
 public class MemberPaginationService {
-  private static final int PAGE_SIZE = 20;
+  public static final int PAGE_SIZE = 10;
+
+  /** Retrieves a numbered page and total count for the member directory. */
+  public NumberedMemberPage getNumberedPage(int requestedPage) {
+    return getNumberedPage(requestedPage, null);
+  }
+
+  /** Retrieves a numbered page filtered by an email fragment. */
+  public NumberedMemberPage getNumberedPage(int requestedPage, String emailFilter) {
+    int page = Math.max(0, requestedPage);
+    Query countQuery =
+        emailFilter == null || emailFilter.isBlank()
+            ? new Query()
+            : Query.query(
+                Criteria.where("email")
+                    .regex(java.util.regex.Pattern.quote(emailFilter), "i"));
+    long total = mongoTemplate.count(countQuery, Member.class);
+    int totalPages = (int) Math.max(1, (total + PAGE_SIZE - 1) / PAGE_SIZE);
+    page = Math.min(page, totalPages - 1);
+    Query query = new Query();
+    if (emailFilter != null && !emailFilter.isBlank()) {
+      query.addCriteria(
+          Criteria.where("email").regex(java.util.regex.Pattern.quote(emailFilter), "i"));
+    }
+    query.with(Sort.by(Sort.Order.asc("name"), Sort.Order.asc("email")));
+    query.skip((long) page * PAGE_SIZE);
+    query.limit(PAGE_SIZE);
+    query.fields().include("id").include("name").include("email").include("phoneNumber");
+    return new NumberedMemberPage(mongoTemplate.find(query, Member.class), page, total, totalPages);
+  }
 
   private final MongoTemplate mongoTemplate;
 
@@ -119,6 +148,20 @@ public class MemberPaginationService {
 
     public String nextEmail() {
       return members.isEmpty() ? null : members.getLast().getEmail();
+    }
+  }
+
+  /** Represents a numbered page of members and its pagination metadata. */
+  public record NumberedMemberPage(
+      List<Member> members, int page, long totalMembers, int totalPages) {
+    /** Returns whether an earlier page exists. */
+    public boolean hasPrevious() {
+      return page > 0;
+    }
+
+    /** Returns whether a later page exists. */
+    public boolean hasNext() {
+      return page < totalPages - 1;
     }
   }
 }
