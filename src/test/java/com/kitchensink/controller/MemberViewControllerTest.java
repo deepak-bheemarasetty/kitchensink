@@ -53,12 +53,25 @@ class MemberViewControllerTest {
 
   @Test
   @WithAnonymousUser
-  void anonymousRequestToBrowserUiIsRejected() throws Exception {
-    mockMvc.perform(get("/")).andExpect(status().isUnauthorized());
+  void anonymousRequestToBrowserUiRedirectsToOidcLogin() throws Exception {
+    mockMvc
+        .perform(get("/"))
+        .andExpect(status().is3xxRedirection())
+        .andExpect(redirectedUrl("/login"));
   }
 
   @Test
-  void homeShowsRegistrationFormAndCachedMostViewedMembers() throws Exception {
+  @WithAnonymousUser
+  void loginPageOffersAuth0SignIn() throws Exception {
+    mockMvc
+        .perform(get("/login"))
+        .andExpect(status().isOk())
+        .andExpect(content().string(containsString("Auth0")))
+        .andExpect(content().string(containsString("/oauth2/authorization/auth0")));
+  }
+
+  @Test
+  void homeShowsGreetingAndFindAddPanesWithCachedMostViewedMembers() throws Exception {
     when(featuredMemberCacheService.getFeaturedMembers())
         .thenReturn(List.of(new CachedMember("member-1", "Jane Doe", "jane@example.com", 3)));
 
@@ -66,13 +79,63 @@ class MemberViewControllerTest {
         .perform(get("/"))
         .andExpect(status().isOk())
         .andExpect(view().name("index"))
-        .andExpect(model().attributeExists("member", "featuredMembers"))
+        .andExpect(model().attributeExists("member", "featuredMembers", "username"))
+        .andExpect(model().attribute("username", "user"))
         .andExpect(content().string(containsString("Jane Doe")))
-        .andExpect(content().string(containsString("Register a Member")))
+        .andExpect(content().string(containsString("Most Viewed Members")))
+        .andExpect(content().string(containsString("Enter the full email for search")))
         .andExpect(content().string(containsString("name=\"_csrf\"")))
-        .andExpect(content().string(containsString("Show All Members")));
+        .andExpect(content().string(containsString("View All Members")))
+        .andExpect(content().string(containsString("Welcome")));
 
     verify(memberPaginationService, never()).getSummaryPage(null, null, null, null);
+  }
+
+  @Test
+  void homeSearchShowsExactEmailMatchAndSelectedDetailsDialog() throws Exception {
+    Member member = member("Jane Doe", "jane@example.com");
+    member.setId("member-1");
+    when(memberRepository.findByEmail("jane@example.com")).thenReturn(Optional.of(member));
+    when(featuredMemberCacheService.recordView("member-1")).thenReturn(Optional.of(member));
+    when(featuredMemberCacheService.getFeaturedMembers()).thenReturn(List.of());
+
+    mockMvc
+        .perform(
+            get("/")
+                .param("searchEmail", " jane@example.com ")
+                .param("selected", "member-1"))
+        .andExpect(status().isOk())
+        .andExpect(model().attribute("searchEmail", "jane@example.com"))
+        .andExpect(model().attribute("searchResult", member))
+        .andExpect(content().string(containsString("Search Results")))
+        .andExpect(content().string(containsString("id=\"member-details-dialog\"")))
+        .andExpect(content().string(containsString("2125551234")));
+
+    verify(memberRepository).findByEmail("jane@example.com");
+    verify(featuredMemberCacheService).recordView("member-1");
+  }
+
+  @Test
+  void homeSearchShowsNotFoundMessageAndDoesNotShowDetailsForUnknownMember()
+      throws Exception {
+    when(memberRepository.findByEmail("missing@example.com")).thenReturn(Optional.empty());
+    when(featuredMemberCacheService.getFeaturedMembers()).thenReturn(List.of());
+    when(featuredMemberCacheService.recordView("unknown-member")).thenReturn(Optional.empty());
+
+    mockMvc
+        .perform(
+            get("/")
+                .param("searchEmail", "missing@example.com")
+                .param("selected", "unknown-member"))
+        .andExpect(status().isOk())
+        .andExpect(model().attribute("searchNotFound", true))
+        .andExpect(
+            content().string(containsString("No member found with that full email address.")))
+        .andExpect(content().string(containsString("id=\"emailSearch\"")))
+        .andExpect(
+            content()
+                .string(
+                    org.hamcrest.Matchers.not(containsString("member-details-dialog"))));
   }
 
   @Test
@@ -122,7 +185,14 @@ class MemberViewControllerTest {
     when(featuredMemberCacheService.recordView("member-1")).thenReturn(Optional.of(member));
 
     mockMvc
-        .perform(get("/members").param("selected", "member-1"))
+        .perform(
+            get("/members")
+                .param("selected", "member-1")
+                .param("email", "")
+                .param("afterName", "")
+                .param("afterEmail", "")
+                .param("beforeName", "")
+                .param("beforeEmail", ""))
         .andExpect(status().isOk())
         .andExpect(view().name("all-members"))
         .andExpect(content().string(containsString("2125551234")))
@@ -183,16 +253,21 @@ class MemberViewControllerTest {
     savedMember.setId("member-1");
     when(memberService.register(any(Member.class))).thenReturn(savedMember);
 
-    mockMvc
-        .perform(
-            post("/members")
-                .with(csrf())
-                .param("name", "Jane Doe")
-                .param("email", "jane@example.com")
-                .param("phoneNumber", "2125551234"))
-        .andExpect(status().is3xxRedirection())
-        .andExpect(redirectedUrl("/"));
+    var result =
+        mockMvc
+            .perform(
+                post("/members")
+                    .with(csrf())
+                    .param("name", "Jane Doe")
+                    .param("email", "jane@example.com")
+                    .param("phoneNumber", "2125551234"))
+            .andExpect(status().is3xxRedirection())
+            .andExpect(redirectedUrl("/"))
+            .andReturn();
 
+    assertThat(result.getFlashMap().get("successMessage"))
+        .isEqualTo("Member created successfully.");
+    assertThat(result.getFlashMap().get("createdMember")).isEqualTo(savedMember);
     ArgumentCaptor<Member> memberCaptor = ArgumentCaptor.forClass(Member.class);
     verify(memberService).register(memberCaptor.capture());
     assertThat(memberCaptor.getValue().getName()).isEqualTo("Jane Doe");
@@ -233,7 +308,9 @@ class MemberViewControllerTest {
                 .param("phoneNumber", "2125551234"))
         .andExpect(status().isOk())
         .andExpect(view().name("index"))
-        .andExpect(model().attributeHasFieldErrorCode("member", "email", "duplicate.email"));
+        .andExpect(model().attributeExists("registrationError"))
+        .andExpect(
+            content().string(containsString("Email already registered: jane@example.com")));
   }
 
   @Test

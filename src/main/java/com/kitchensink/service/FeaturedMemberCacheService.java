@@ -12,7 +12,7 @@ import org.springframework.stereotype.Service;
 /** Tracks most-viewed member summaries in memory for the home page. */
 @Service
 public class FeaturedMemberCacheService {
-  private static final int FEATURED_MEMBER_LIMIT = 5;
+  private static final int FEATURED_MEMBER_LIMIT = 10;
 
   private static final Comparator<CachedMember> MOST_VIEWED_ORDER =
       Comparator.comparingLong(CachedMember::viewCount)
@@ -27,7 +27,7 @@ public class FeaturedMemberCacheService {
     this.memberRepository = memberRepository;
   }
 
-  /** Returns up to five cached members without querying MongoDB. */
+  /** Returns up to ten cached members without querying MongoDB. */
   public List<CachedMember> getFeaturedMembers() {
     return membersById.values().stream().sorted(MOST_VIEWED_ORDER).limit(FEATURED_MEMBER_LIMIT)
         .toList();

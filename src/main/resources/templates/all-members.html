@@ -2,87 +2,66 @@
 <html lang="en" xmlns:th="http://www.thymeleaf.org">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>All Members</title>
     <link rel="stylesheet" th:href="@{/css/styles.css}" />
   </head>
   <body>
     <main class="container">
-      <header>
+      <header class="page-header">
         <h1>All Members</h1>
-        <a th:href="@{/}">Home</a>
+        <a class="button-secondary" th:href="@{/}">Home</a>
       </header>
 
-      <div class="member-browser">
+      <div class="member-browser single-pane-browser">
         <section class="member-list-pane" aria-labelledby="member-list-heading">
           <h2 id="member-list-heading">Members</h2>
-          <form th:action="@{/members}" method="get" class="search-form">
-            <label for="emailSearch">Search by email</label>
-            <input id="emailSearch" name="email" type="email" th:value="${searchEmail}"
-                   placeholder="name@example.com" />
-            <button type="submit" class="primary">Search</button>
-            <a class="button-secondary" th:if="${!#strings.isEmpty(searchEmail)}"
-               th:href="@{/members}">Clear Search</a>
+          <form class="data-table-toolbar" th:action="@{/members}" method="get">
+            <label for="member-filter">Filter members</label>
+            <input id="member-filter" name="email" type="search" th:value="${searchEmail}" placeholder="Filter by email" />
+            <button type="submit" class="button-secondary">Filter</button>
+            <a class="button-secondary" th:if="${!#strings.isEmpty(searchEmail)}" th:href="@{/members}">Clear</a>
           </form>
 
-          <p th:if="${!#strings.isEmpty(searchEmail)}" class="search-summary">
-            Search results for <strong th:text="${searchEmail}">name@example.com</strong>
+          <p th:if="${numberedPage != null}" class="search-summary">
+            <strong th:text="${numberedPage.totalMembers}">0</strong> total members
           </p>
 
-          <table>
+          <table id="members-table" class="data-table">
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Email</th>
+                <th><button type="button" class="sort-button" data-sort-key="name">Name <span aria-hidden="true">↕</span></button></th>
+                <th><button type="button" class="sort-button" data-sort-key="email">Email <span aria-hidden="true">↕</span></button></th>
+                <th>Phone Number</th>
               </tr>
             </thead>
             <tbody>
-              <tr th:if="${#lists.isEmpty(members) and !searchNotFound}">
-                <td colspan="2">No members found.</td>
+              <tr th:if="${#lists.isEmpty(members)}">
+                <td colspan="3">No members found.</td>
               </tr>
               <tr th:each="member : ${members}">
-                <td>
-                  <a th:href="@{/members(email=${searchEmail}, selected=${member.id},
-                       afterName=${afterName}, afterEmail=${afterEmail},
-                       beforeName=${beforeName}, beforeEmail=${beforeEmail})}"
-                     th:text="${member.name}">Jane Doe</a>
-                </td>
+                <td th:text="${member.name}">Jane Doe</td>
                 <td th:text="${member.email}">jane@example.com</td>
+                <td th:text="${member.phoneNumber}">2125551234</td>
               </tr>
             </tbody>
           </table>
 
-          <nav class="pagination"
-               th:if="${cursorPage != null and (cursorPage.hasPrevious or cursorPage.hasNext)}"
-               aria-label="Member pages">
-            <a th:if="${cursorPage.hasPrevious}"
-               th:href="@{/members(beforeName=${cursorPage.previousName},
-                    beforeEmail=${cursorPage.previousEmail})}">Previous</a>
-            <a th:if="${cursorPage.hasNext}"
-               th:href="@{/members(afterName=${cursorPage.nextName},
-                    afterEmail=${cursorPage.nextEmail})}">Next</a>
+          <nav class="pagination numbered-pagination" th:if="${numberedPage != null}" aria-label="Member pages">
+            <a class="page-arrow" th:classappend="${!numberedPage.hasPrevious} ? 'disabled' : ''"
+               th:href="${numberedPage.hasPrevious} ? @{/members(page=${numberedPage.page - 1}, email=${searchEmail})} : '#'"
+               aria-label="Previous page">‹</a>
+            <span th:each="pageNumber : ${#numbers.sequence(0, numberedPage.totalPages - 1)}"
+                  th:if="${pageNumber < 3 or pageNumber >= numberedPage.totalPages - 3 or (pageNumber >= numberedPage.page - 1 and pageNumber <= numberedPage.page + 1)}">
+              <a th:classappend="${pageNumber == numberedPage.page} ? 'current-page' : ''"
+                 th:href="@{/members(page=${pageNumber}, email=${searchEmail})}" th:text="${pageNumber + 1}">1</a>
+            </span>
+            <a class="page-arrow" th:classappend="${!numberedPage.hasNext} ? 'disabled' : ''"
+               th:href="${numberedPage.hasNext} ? @{/members(page=${numberedPage.page + 1}, email=${searchEmail})} : '#'"
+               aria-label="Next page">›</a>
           </nav>
         </section>
 
-        <section class="member-detail-pane" aria-labelledby="member-detail-heading">
-          <h2 id="member-detail-heading">Member Details</h2>
-          <div th:if="${selectedMember == null}" class="empty-detail">
-            Select a member name to view their details.
-          </div>
-          <dl th:if="${selectedMember != null}" class="detail-list">
-            <div>
-              <dt>Name</dt>
-              <dd th:text="${selectedMember.name}">Jane Doe</dd>
-            </div>
-            <div>
-              <dt>Email</dt>
-              <dd th:text="${selectedMember.email}">jane@example.com</dd>
-            </div>
-            <div>
-              <dt>Phone Number</dt>
-              <dd th:text="${selectedMember.phoneNumber}">2125551234</dd>
-            </div>
-          </dl>
-        </section>
       </div>
     </main>
 
@@ -97,5 +76,6 @@
         <a class="primary" th:href="@{/members}">Close</a>
       </section>
     </div>
+    <script th:src="@{/js/members-table.js}" defer></script>
   </body>
 </html>

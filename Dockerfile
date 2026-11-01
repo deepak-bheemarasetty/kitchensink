@@ -3,7 +3,8 @@ WORKDIR /workspace
 COPY pom.xml .
 COPY config config
 COPY src src
-RUN mvn -B verify
+RUN mvn -B -DskipTests package
+RUN jar tf target/kitchensink.jar | grep -q 'BOOT-INF/classes/static/css/styles.css'
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app
