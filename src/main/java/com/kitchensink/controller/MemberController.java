@@ -3,6 +3,8 @@ package com.kitchensink.controller;
 import com.kitchensink.dto.MemberRequest;
 import com.kitchensink.model.Member;
 import com.kitchensink.repository.MemberRepository;
+import com.kitchensink.service.MemberPaginationService;
+import com.kitchensink.service.MemberPaginationService.MemberCursorPage;
 import com.kitchensink.service.MemberService;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -12,6 +14,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
@@ -30,18 +33,46 @@ public class MemberController {
    */
   public record MemberResponse(String id, String name, String email, String phoneNumber) {}
 
+  /** Cursor links for moving through a bounded member-list response. */
+  public record MemberCursor(String name, String email) {}
+
+  /** A bounded member page and cursor values for adjacent requests. */
+  public record MemberPageResponse(
+      List<MemberResponse> members,
+      boolean hasPrevious,
+      boolean hasNext,
+      MemberCursor previousCursor,
+      MemberCursor nextCursor) {}
+
+  private final MemberPaginationService memberPaginationService;
   private final MemberRepository memberRepository;
   private final MemberService memberService;
 
-  public MemberController(MemberRepository memberRepository, MemberService memberService) {
+  /** Creates the REST controller with bounded member pagination and registration services. */
+  public MemberController(
+      MemberPaginationService memberPaginationService,
+      MemberRepository memberRepository,
+      MemberService memberService) {
+    this.memberPaginationService = memberPaginationService;
     this.memberRepository = memberRepository;
     this.memberService = memberService;
   }
 
-  /** Lists all members in ascending name order. */
+  /** Lists a bounded member page using forward or backward keyset cursors. */
   @GetMapping
-  public List<MemberResponse> listAllMembers() {
-    return memberRepository.findAllByOrderByNameAsc().stream().map(this::toResponse).toList();
+  public MemberPageResponse listAllMembers(
+      @RequestParam(required = false) String afterName,
+      @RequestParam(required = false) String afterEmail,
+      @RequestParam(required = false) String beforeName,
+      @RequestParam(required = false) String beforeEmail) {
+    MemberCursorPage page =
+        memberPaginationService.getPage(afterName, afterEmail, beforeName, beforeEmail);
+    return new MemberPageResponse(
+        page.members().stream().map(this::toResponse).toList(),
+        page.hasPrevious(),
+        page.hasNext(),
+        page.hasPrevious() ? new MemberCursor(page.previousName(), page.previousEmail()) : null,
+        page.hasNext() ? new MemberCursor(page.nextName(), page.nextEmail()) : null);
   }
 
   /** Looks up a member by its identifier. */

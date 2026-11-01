@@ -18,6 +18,8 @@ services:
       - "9080:9080"
     environment:
       MONGODB_URI: mongodb://mongodb:27017/kitchensink
+      SPRING_SECURITY_USER_NAME: user
+      SPRING_SECURITY_USER_PASSWORD: ${SPRING_SECURITY_USER_PASSWORD:-password@001}
     depends_on:
       mongodb:
         condition: service_healthy

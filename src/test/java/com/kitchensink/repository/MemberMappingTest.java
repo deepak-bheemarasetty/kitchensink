@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.kitchensink.model.Member;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.MongoMappingContext;
 
@@ -23,5 +24,7 @@ class MemberMappingTest {
     assertThat(entity.getRequiredIdProperty().getName()).isEqualTo("id");
     assertThat(email.findAnnotation(Indexed.class)).isNotNull();
     assertThat(email.findAnnotation(Indexed.class).unique()).isTrue();
+    assertThat(Member.class.getAnnotation(CompoundIndex.class).def())
+        .isEqualTo("{'name': 1, 'email': 1}");
   }
 }

@@ -1,6 +1,6 @@
 # Kitchen Sink
 
-Kitchen Sink is a Spring Boot REST application for managing member registrations. It provides endpoints to list members, retrieve a member by ID, and register a member. Member data is stored as MongoDB documents using Spring Data MongoDB. All member endpoints require HTTP Basic authentication.
+Kitchen Sink is a Spring Boot application for managing member registrations through a browser UI and REST API. Member data is stored as MongoDB documents using Spring Data MongoDB. The UI, API, and operational endpoints require HTTP Basic authentication.
 
 Project author: Deepak Bheemarasetty.
 
@@ -37,27 +37,27 @@ if ($service.Status -ne "Running") { Start-Service MongoDB }
 Get-Service MongoDB
 ```
 
-Seed the sample member from the project root. This command is safe to run more than once:
+Seed 75 sample members from the project root. This command is safe to run more than once and does not overwrite existing member records:
 
 ```powershell
 mongosh "mongodb://localhost:27017/kitchensink" scripts/seed-members.js
 ```
 
-The application defaults to `mongodb://localhost:27017/kitchensink` and listens on `http://localhost:9080`. Set `MONGODB_URI` if your local MongoDB uses a different connection string. For example:
+The application defaults to `mongodb://localhost:27017/kitchensink` and is available at `http://localhost:9080/kitchensink`. Set `MONGODB_URI` if your local MongoDB uses a different connection string. For example:
 
 ```powershell
 $env:MONGODB_URI = "mongodb://localhost:27017/kitchensink"
 ```
 
-Spring Security creates a `user` account with a randomly generated password when no credentials are configured; the password appears in the startup log. Alternatively, set local credentials before starting the app:
+For local development, the default HTTP Basic credentials are username `demo.user@gmail.com` and password `password@001`. All browser pages, static assets, and API endpoints require authentication. Override the defaults before starting the app when using a different device or environment:
 
 ```powershell
-$env:SPRING_SECURITY_USER_NAME = "demo"
-$env:SPRING_SECURITY_USER_PASSWORD = "replace-with-a-local-password"
+$env:SPRING_SECURITY_USER_NAME = "your-local-username"
+$env:SPRING_SECURITY_USER_PASSWORD = "your-local-password"
 mvn spring-boot:run
 ```
 
-If you set a username such as `demo`, use that same username in API requests. Stop the application with `Ctrl+C`. Do not use demo credentials in production; supply credentials through a secrets manager or environment variables.
+Do not use the documented defaults outside this local development setup; configure credentials through environment variables or a secrets manager.
 
 ## Run with Docker Compose
 
@@ -84,13 +84,20 @@ For an existing checkout, run `git switch migration-docker` from the repository 
 docker compose up --build
 ```
 
-Compose waits for MongoDB's health check before starting the application. The app is available at `http://localhost:9080`. MongoDB seeds the sample member when its data volume is first initialized. Spring Security generates a development password and prints it in the application logs; the foreground `up` output shows it, or use a second terminal to run:
+Compose waits for MongoDB's health check before starting the application. The app is available at `http://localhost:9080/kitchensink`. MongoDB seeds the sample member when its data volume is first initialized. For local Docker testing, Compose uses username `user` and password `password@001` by default; set `SPRING_SECURITY_USER_PASSWORD` before starting Compose to override the password:
+
+```powershell
+$env:SPRING_SECURITY_USER_PASSWORD = "your-local-password"
+docker compose up --build
+```
+
+To find the password currently configured for the running app:
 
 ```powershell
 docker compose logs app
 ```
 
-Use username `user` and that generated password with the authenticated API examples below. Stop the foreground Compose process with `Ctrl+C`, then run `docker compose down` to remove the containers and network. Member data is stored in the `mongo_data` named volume and remains when containers are removed. To permanently delete that database and its seeded/member data too, run:
+Use username `user` and the configured password with the authenticated API examples below. Stop the foreground Compose process with `Ctrl+C`, then run `docker compose down` to remove the containers and network. Member data is stored in the `mongo_data` named volume and remains when containers are removed. To permanently delete that database and its seeded/member data too, run:
 
 ```powershell
 docker compose down --volumes
@@ -111,35 +118,63 @@ The application uses port `9080` by default. You can override it at startup, for
 java -jar target/kitchensink.jar --server.port=9081
 ```
 
+## Browser UI
+
+The browser UI is available under the `/kitchensink` context path and has two main pages:
+
+- `/kitchensink/` shows the member registration form and up to five most-viewed members from an in-memory cache. The cache starts empty on application startup and is populated as member details are viewed; it resets when the application restarts.
+- `/kitchensink/members` shows a two-pane member browser: the keyset-paginated, searchable list is on the left and selected member details are on the right. The list is ordered by name and email and loads at most 20 records per MongoDB request, plus one lookahead record to determine whether a next page exists. Next/Previous use the last/first `(name, email)` cursor; there is no offset skip, full count query, or numbered page list.
+- Selecting a member name opens its details in the right pane and increments its in-memory view count. Phone numbers are only shown in the details pane.
+
+The All Members page supports exact email search, shows only the match with its details, and offers a clear-search link to restore the full paginated list. An unsuccessful search displays a dismissible warning. Member list rows show only name and email. The home-page form validates name, email, and phone in the browser as the user types and blocks invalid submissions; server-side validation remains enabled as a safety net. Pages use Thymeleaf and are available in a browser on the same machine as the app.
+
 ## Member API
 
 All endpoints use the `/rest/members` path and exchange JSON.
 
-For the API examples below, set the username and password configured when starting the application, then create the Basic Authentication header once in PowerShell. For Docker Compose, the username is `user` and the password is the generated value printed in the application logs:
+For the API examples below, set the username and password configured when starting the application, then create the Basic Authentication header once in PowerShell. Use the credentials for your runtime:
 
 ```powershell
-$pair = "user:YOUR_PASSWORD"
+# Local default credentials:
+$pair = "demo.user@gmail.com:password@001"
+# Docker Compose defaults:
+# $pair = "user:password@001"
+# If SPRING_SECURITY_USER_PASSWORD was overridden, use that password instead.
 $encoded = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes($pair))
 $headers = @{ Authorization = "Basic $encoded" }
 ```
 
 ### List members
 
-Returns members ordered by name. In PowerShell, use:
+Returns one keyset-paginated page ordered by name and email: at most 20 members, plus a lookahead row used internally to determine whether another page exists. The response includes `members`, `hasPrevious`, `hasNext`, and cursor objects. In PowerShell, use:
 
 ```powershell
-Invoke-RestMethod -Uri "http://localhost:9080/rest/members" -Headers $headers
+$page = Invoke-RestMethod -Uri "http://localhost:9080/kitchensink/rest/members" -Headers $headers
+$page.members
+$page.hasNext
 ```
+
+Use `nextCursor` as the exclusive cursor for the next page. Cursor values are URL-encoded because member names can contain spaces:
+
+```powershell
+$afterName = [uri]::EscapeDataString($page.nextCursor.name)
+$afterEmail = [uri]::EscapeDataString($page.nextCursor.email)
+$nextPage = Invoke-RestMethod `
+    -Uri "http://localhost:9080/kitchensink/rest/members?afterName=$afterName&afterEmail=$afterEmail" `
+    -Headers $headers
+```
+
+Use the complete `previousCursor` pair as `beforeName` and `beforeEmail` to navigate backward. Supply exactly one complete cursor pair per request; the endpoint does not accept a page number or offset.
 
 ### Get a member
 
 Returns the member with the requested MongoDB ObjectId. To get an ID, list the members:
 
 ```powershell
-$members = Invoke-RestMethod -Uri "http://localhost:9080/rest/members" -Headers $headers
-$members
-$memberId = $members[0].id
-Invoke-RestMethod -Uri "http://localhost:9080/rest/members/$memberId" -Headers $headers
+$page = Invoke-RestMethod -Uri "http://localhost:9080/kitchensink/rest/members" -Headers $headers
+$page.members
+$memberId = $page.members[0].id
+Invoke-RestMethod -Uri "http://localhost:9080/kitchensink/rest/members/$memberId" -Headers $headers
 ```
 
 ### Register a member
@@ -152,7 +187,7 @@ $member = @{
     email = "jane@example.com"
     phoneNumber = "2125551234"
 } | ConvertTo-Json
-Invoke-RestMethod -Uri "http://localhost:9080/rest/members" -Method Post `
+Invoke-RestMethod -Uri "http://localhost:9080/kitchensink/rest/members" -Method Post `
     -Headers $headers `
     -ContentType "application/json" -Body $member
 ```
@@ -166,7 +201,23 @@ A successful registration returns `201 Created`, the saved member as JSON, and a
 - `phoneNumber` is required and must contain 8 to 12 digits.
 - Email addresses must be unique.
 
-The API uses stateless HTTP Basic authentication. Requests without valid credentials receive `401 Unauthorized`. CSRF protection is disabled because the API is stateless and does not use browser sessions.
+The API uses stateless HTTP Basic authentication. Requests without valid credentials receive `401 Unauthorized`. CSRF protection is disabled only for `/rest/**`; the browser UI uses CSRF tokens for state-changing form submissions.
+
+## Operational metrics
+
+Spring Boot Actuator exposes authenticated `/kitchensink/actuator/health` and `/kitchensink/actuator/metrics` endpoints. Health details are hidden. MongoDB driver metrics expose database command counts and durations, tagged by database, collection, command, and status. Connection-pool gauges expose checked-out connections, total pool size, wait-queue size, and checkout failures. The checked-out gauge and configured pool maximum can be used to calculate utilization; the MongoDB driver's default maximum is 100 unless overridden in the connection URI. For example:
+
+```powershell
+Invoke-RestMethod -Uri "http://localhost:9080/kitchensink/actuator/metrics/http.server.requests" -Headers $headers
+Invoke-RestMethod -Uri "http://localhost:9080/kitchensink/actuator/metrics/mongodb.driver.commands" -Headers $headers
+Invoke-RestMethod -Uri "http://localhost:9080/kitchensink/actuator/metrics/mongodb.driver.commands?tag=database:kitchensink&tag=collection:members&tag=command:find" -Headers $headers
+Invoke-RestMethod -Uri "http://localhost:9080/kitchensink/actuator/metrics/mongodb.driver.pool.checkedout" -Headers $headers
+Invoke-RestMethod -Uri "http://localhost:9080/kitchensink/actuator/metrics/mongodb.driver.pool.size" -Headers $headers
+Invoke-RestMethod -Uri "http://localhost:9080/kitchensink/actuator/metrics/mongodb.driver.pool.waitqueuesize" -Headers $headers
+Invoke-RestMethod -Uri "http://localhost:9080/kitchensink/actuator/metrics/mongodb.driver.pool.checkoutfailed" -Headers $headers
+```
+
+`mongodb.driver.commands` reports command frequency (`COUNT`) and database command time (`TOTAL_TIME` and `MAX`) over the application process lifetime. The application does not currently use MongoDB transactions, so there is no transaction-duration metric; command durations are available now, and transaction timing is deferred until transactional operations are introduced. Metrics remain in-process and are available through Actuator; no external dashboard or exporter is planned.
 
 ## Code style
 
