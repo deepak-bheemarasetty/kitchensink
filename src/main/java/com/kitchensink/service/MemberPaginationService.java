@@ -28,6 +28,15 @@ public class MemberPaginationService {
    */
   public MemberCursorPage getPage(
       String afterName, String afterEmail, String beforeName, String beforeEmail) {
+    return getPage(afterName, afterEmail, beforeName, beforeEmail, false);
+  }
+
+  private MemberCursorPage getPage(
+      String afterName,
+      String afterEmail,
+      String beforeName,
+      String beforeEmail,
+      boolean summaryOnly) {
     validateCursors(afterName, afterEmail, beforeName, beforeEmail);
     boolean previousRequest = beforeName != null;
     Query query = new Query();
@@ -41,6 +50,9 @@ public class MemberPaginationService {
       query.with(Sort.by(Sort.Order.asc("name"), Sort.Order.asc("email")));
     }
     query.limit(PAGE_SIZE + 1);
+    if (summaryOnly) {
+      query.fields().include("id").include("name").include("email");
+    }
 
     List<Member> results = new ArrayList<>(mongoTemplate.find(query, Member.class));
     boolean hasMoreInRequestedDirection = results.size() > PAGE_SIZE;
@@ -54,6 +66,12 @@ public class MemberPaginationService {
     boolean hasPrevious = previousRequest ? hasMoreInRequestedDirection : afterName != null;
     boolean hasNext = previousRequest || hasMoreInRequestedDirection;
     return new MemberCursorPage(results, hasPrevious, hasNext);
+  }
+
+  /** Retrieves only list fields for the browser without loading phone numbers. */
+  public MemberCursorPage getSummaryPage(
+      String afterName, String afterEmail, String beforeName, String beforeEmail) {
+    return getPage(afterName, afterEmail, beforeName, beforeEmail, true);
   }
 
   private Criteria cursorCriteria(String name, String email, boolean forward) {

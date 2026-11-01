@@ -73,7 +73,7 @@ public class MemberViewController {
       selected = match.map(Member::getId).orElse(null);
     } else {
       memberPage =
-          memberPaginationService.getPage(afterName, afterEmail, beforeName, beforeEmail);
+          memberPaginationService.getSummaryPage(afterName, afterEmail, beforeName, beforeEmail);
       members = memberPage.members();
       model.addAttribute("searchEmail", "");
       model.addAttribute("searchNotFound", false);

@@ -16,6 +16,7 @@
       <section aria-labelledby="registration-heading">
         <h2 id="registration-heading">Register a Member</h2>
         <form th:action="@{/members}" th:object="${member}" method="post" novalidate>
+          <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}" />
           <div th:if="${#fields.hasAnyErrors()}" class="alert error">
             <ul>
               <li th:each="err : ${#fields.allErrors()}" th:text="${err}"></li>

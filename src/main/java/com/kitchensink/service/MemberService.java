@@ -4,6 +4,7 @@ import com.kitchensink.model.Member;
 import com.kitchensink.repository.MemberRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
 /**
@@ -26,6 +27,10 @@ public class MemberService {
     if (memberRepository.findByEmail(member.getEmail()).isPresent()) {
       throw new DuplicateEmailException("Email already registered: " + member.getEmail());
     }
-    return memberRepository.save(member);
+    try {
+      return memberRepository.save(member);
+    } catch (DuplicateKeyException exception) {
+      throw new DuplicateEmailException("Email already registered: " + member.getEmail());
+    }
   }
 }

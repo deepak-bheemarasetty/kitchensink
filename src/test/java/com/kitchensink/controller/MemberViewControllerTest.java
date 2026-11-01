@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -68,16 +69,17 @@ class MemberViewControllerTest {
         .andExpect(model().attributeExists("member", "featuredMembers"))
         .andExpect(content().string(containsString("Jane Doe")))
         .andExpect(content().string(containsString("Register a Member")))
+        .andExpect(content().string(containsString("name=\"_csrf\"")))
         .andExpect(content().string(containsString("Show All Members")));
 
-    verify(memberPaginationService, never()).getPage(null, null, null, null);
+    verify(memberPaginationService, never()).getSummaryPage(null, null, null, null);
   }
 
   @Test
   void allMembersPageShowsOnlyNameEmailAndDetailsLink() throws Exception {
     Member member = member("Jane Doe", "jane@example.com");
     member.setId("member-1");
-    when(memberPaginationService.getPage(null, null, null, null))
+    when(memberPaginationService.getSummaryPage(null, null, null, null))
         .thenReturn(new MemberCursorPage(List.of(member), false, false));
 
     mockMvc
@@ -98,7 +100,7 @@ class MemberViewControllerTest {
   void allMembersPageUsesTwentyMemberPagesAndNavigation() throws Exception {
     Member member = member("Zoe Doe", "zoe@example.com");
     member.setId("member-21");
-    when(memberPaginationService.getPage("Taylor", "t@example.com", null, null))
+    when(memberPaginationService.getSummaryPage("Taylor", "t@example.com", null, null))
         .thenReturn(new MemberCursorPage(List.of(member), true, true));
 
     mockMvc
@@ -108,14 +110,14 @@ class MemberViewControllerTest {
         .andExpect(content().string(containsString("beforeName=Zoe")))
         .andExpect(content().string(containsString("afterName=Zoe")));
 
-    verify(memberPaginationService).getPage("Taylor", "t@example.com", null, null);
+    verify(memberPaginationService).getSummaryPage("Taylor", "t@example.com", null, null);
   }
 
   @Test
   void selectingMemberShowsDetailsInRightPaneWithoutLeavingMembersPage() throws Exception {
     Member member = member("Jane Doe", "jane@example.com");
     member.setId("member-1");
-    when(memberPaginationService.getPage(null, null, null, null))
+    when(memberPaginationService.getSummaryPage(null, null, null, null))
         .thenReturn(new MemberCursorPage(List.of(member), false, false));
     when(featuredMemberCacheService.recordView("member-1")).thenReturn(Optional.of(member));
 
@@ -146,7 +148,7 @@ class MemberViewControllerTest {
         .andExpect(content().string(containsString("Clear Search")));
 
     verify(memberRepository).findByEmail("jane@example.com");
-    verify(memberPaginationService, never()).getPage(null, null, null, null);
+    verify(memberPaginationService, never()).getSummaryPage(null, null, null, null);
   }
 
   @Test
@@ -164,7 +166,7 @@ class MemberViewControllerTest {
 
   @Test
   void clearingSearchLoadsTheFullPagedMemberList() throws Exception {
-    when(memberPaginationService.getPage(null, null, null, null))
+    when(memberPaginationService.getSummaryPage(null, null, null, null))
         .thenReturn(new MemberCursorPage(List.of(), false, false));
 
     mockMvc
@@ -172,7 +174,7 @@ class MemberViewControllerTest {
         .andExpect(status().isOk())
         .andExpect(view().name("all-members"));
 
-    verify(memberPaginationService).getPage(null, null, null, null);
+    verify(memberPaginationService).getSummaryPage(null, null, null, null);
   }
 
   @Test
@@ -184,6 +186,7 @@ class MemberViewControllerTest {
     mockMvc
         .perform(
             post("/members")
+                .with(csrf())
                 .param("name", "Jane Doe")
                 .param("email", "jane@example.com")
                 .param("phoneNumber", "2125551234"))
@@ -204,6 +207,7 @@ class MemberViewControllerTest {
     mockMvc
         .perform(
             post("/members")
+                .with(csrf())
                 .param("name", "Jane1")
                 .param("email", "invalid")
                 .param("phoneNumber", "123"))
@@ -223,12 +227,26 @@ class MemberViewControllerTest {
     mockMvc
         .perform(
             post("/members")
+                .with(csrf())
                 .param("name", "Jane Doe")
                 .param("email", "jane@example.com")
                 .param("phoneNumber", "2125551234"))
         .andExpect(status().isOk())
         .andExpect(view().name("index"))
         .andExpect(model().attributeHasFieldErrorCode("member", "email", "duplicate.email"));
+  }
+
+  @Test
+  void browserRegistrationRejectsMissingCsrfToken() throws Exception {
+    mockMvc
+        .perform(
+            post("/members")
+                .param("name", "Jane Doe")
+                .param("email", "jane@example.com")
+                .param("phoneNumber", "2125551234"))
+        .andExpect(status().isForbidden());
+
+    verify(memberService, never()).register(any(Member.class));
   }
 
   private static Member member(String name, String email) {

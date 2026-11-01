@@ -15,6 +15,8 @@ import com.kitchensink.config.SecurityConfiguration;
 import com.kitchensink.model.Member;
 import com.kitchensink.repository.MemberRepository;
 import com.kitchensink.service.DuplicateEmailException;
+import com.kitchensink.service.MemberPaginationService;
+import com.kitchensink.service.MemberPaginationService.MemberCursorPage;
 import com.kitchensink.service.MemberService;
 import java.util.List;
 import java.util.Optional;
@@ -28,6 +30,7 @@ import org.springframework.security.test.context.support.WithAnonymousUser;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  * Tests the member REST endpoints and request validation.
@@ -42,22 +45,58 @@ class MemberControllerTest {
 
   @MockitoBean private MemberRepository memberRepository;
 
+  @MockitoBean private MemberPaginationService memberPaginationService;
+
   @MockitoBean private MemberService memberService;
 
   @Test
-  void listMembersReturnsMembersOrderedByName() throws Exception {
+  void listMembersReturnsBoundedCursorPage() throws Exception {
     Member member = member("Jane Doe", "jane@example.com");
     member.setId("507f1f77bcf86cd799439011");
-    when(memberRepository.findAllByOrderByNameAsc()).thenReturn(List.of(member));
+    when(memberPaginationService.getPage(null, null, null, null))
+        .thenReturn(new MemberCursorPage(List.of(member), false, true));
 
     mockMvc
         .perform(get("/rest/members"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$[0].id").value("507f1f77bcf86cd799439011"))
-        .andExpect(jsonPath("$[0].name").value("Jane Doe"))
-        .andExpect(jsonPath("$[0].email").value("jane@example.com"))
-        .andExpect(jsonPath("$[0].phoneNumber").value("2125551234"))
-        .andExpect(jsonPath("$[0].password").doesNotExist());
+        .andExpect(jsonPath("$.members[0].id").value("507f1f77bcf86cd799439011"))
+        .andExpect(jsonPath("$.members[0].name").value("Jane Doe"))
+        .andExpect(jsonPath("$.members[0].email").value("jane@example.com"))
+        .andExpect(jsonPath("$.members[0].phoneNumber").value("2125551234"))
+        .andExpect(jsonPath("$.members[0].password").doesNotExist())
+        .andExpect(jsonPath("$.hasNext").value(true))
+        .andExpect(jsonPath("$.nextCursor.name").value("Jane Doe"))
+        .andExpect(jsonPath("$.nextCursor.email").value("jane@example.com"));
+  }
+
+  @Test
+  void listMembersPassesForwardCursorToPaginationService() throws Exception {
+    Member member = member("Jane Doe", "jane@example.com");
+    member.setId("507f1f77bcf86cd799439011");
+    when(memberPaginationService.getPage("Jane Doe", "jane@example.com", null, null))
+        .thenReturn(new MemberCursorPage(List.of(member), true, false));
+
+    mockMvc
+        .perform(
+            get("/rest/members")
+                .param("afterName", "Jane Doe")
+                .param("afterEmail", "jane@example.com"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.hasPrevious").value(true))
+        .andExpect(jsonPath("$.previousCursor.name").value("Jane Doe"));
+
+    verify(memberPaginationService).getPage("Jane Doe", "jane@example.com", null, null);
+  }
+
+  @Test
+  void listMembersRejectsIncompleteCursor() throws Exception {
+    when(memberPaginationService.getPage("Jane Doe", null, null, null))
+        .thenThrow(new ResponseStatusException(
+            org.springframework.http.HttpStatus.BAD_REQUEST, "Invalid cursor"));
+
+    mockMvc
+        .perform(get("/rest/members").param("afterName", "Jane Doe"))
+        .andExpect(status().isBadRequest());
   }
 
   @Test

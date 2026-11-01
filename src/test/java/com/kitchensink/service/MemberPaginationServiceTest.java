@@ -57,6 +57,20 @@ class MemberPaginationServiceTest {
   }
 
   @Test
+  void summaryPageProjectsOnlyMemberListFields() {
+    when(mongoTemplate.find(any(Query.class), eq(Member.class))).thenReturn(List.of(member(1)));
+
+    MemberPaginationService.MemberCursorPage page =
+        paginationService.getSummaryPage(null, null, null, null);
+
+    assertThat(page.members()).hasSize(1);
+    Query query = captureQuery();
+    assertThat(query.getFieldsObject())
+        .containsKeys("name", "email")
+        .doesNotContainKey("phoneNumber");
+  }
+
+  @Test
   void nextPageUsesExclusiveForwardCursorAndNoOffsetSkip() {
     when(mongoTemplate.find(any(Query.class), eq(Member.class)))
         .thenReturn(List.of(member(20)));
