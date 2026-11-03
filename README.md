@@ -54,13 +54,13 @@ Seed 75 sample members from the project root. This command is safe to run more t
 mongosh "mongodb://localhost:27017/kitchensink" scripts/seed-members.js
 ```
 
-The application defaults to `mongodb://localhost:27017/kitchensink` and is available at `http://localhost:9080/kitchensink`. Set `MONGODB_URI` if your local MongoDB uses a different connection string. On Windows PowerShell:
+The application defaults to `mongodb://localhost:27017/kitchensink` and is available at `http://localhost:9080/kitchensink`. For local startup, copy `.env.example` to `.env` and set your MongoDB and Auth0 values there:
 
-```shell
-$env:MONGODB_URI = "mongodb://localhost:27017/kitchensink"
+```powershell
+Copy-Item .env.example .env
 ```
 
-In macOS/Linux shells, set the same variable with `export MONGODB_URI="mongodb://localhost:27017/kitchensink"`.
+Spring Boot loads the root `.env` when started from the project root. The file is ignored by Git; never commit secrets. Environment variables supplied by the shell or deployment environment take precedence over `.env`.
 
 Authentication uses Auth0 OpenID Connect for browser sign-in and signed JWT bearer tokens for the REST API. Create a Regular Web Application and an API in Auth0, then configure the following application URLs:
 
@@ -68,23 +68,19 @@ Authentication uses Auth0 OpenID Connect for browser sign-in and signed JWT bear
 - Allowed Logout URL: `http://localhost:9080/kitchensink/`
 - Set the Auth0 tenant's Default Audience to the API identifier.
 
-Set these environment variables before starting the application. Keep the client secret private and never commit it:
+Set these values in the root `.env` before starting the application. Use the Auth0 Regular Web Application credentials here:
 
-```powershell
-$env:OIDC_ISSUER_URI = "https://YOUR_AUTH0_DOMAIN/"
-$env:OIDC_CLIENT_ID = "YOUR_CLIENT_ID"
-$env:OIDC_CLIENT_SECRET = "YOUR_CLIENT_SECRET"
-$env:OIDC_AUDIENCE = "YOUR_AUTH0_API_IDENTIFIER"
-mvn spring-boot:run
+```dotenv
+OIDC_ISSUER_URI=https://YOUR_AUTH0_DOMAIN/
+OIDC_CLIENT_ID=YOUR_AUTH0_REGULAR_WEB_APP_CLIENT_ID
+OIDC_CLIENT_SECRET=YOUR_AUTH0_REGULAR_WEB_APP_CLIENT_SECRET
+OIDC_AUDIENCE=YOUR_AUTH0_API_IDENTIFIER
+MONGODB_URI=mongodb://localhost:27017/kitchensink
 ```
 
-In macOS/Linux shells, use:
+Start the application from the project root:
 
-```shell
-export OIDC_ISSUER_URI="https://YOUR_AUTH0_DOMAIN/"
-export OIDC_CLIENT_ID="YOUR_CLIENT_ID"
-export OIDC_CLIENT_SECRET="YOUR_CLIENT_SECRET"
-export OIDC_AUDIENCE="YOUR_AUTH0_API_IDENTIFIER"
+```powershell
 mvn spring-boot:run
 ```
 
