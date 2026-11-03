@@ -61,7 +61,7 @@ public class MemberViewController {
         normalizedSearchEmail.isEmpty()
             ? Optional.empty()
             : memberRepository.findByEmail(normalizedSearchEmail);
-    searchResult.ifPresent(member -> featuredMemberCacheService.recordView(member.getId()));
+    searchResult.ifPresent(featuredMemberCacheService::recordView);
     model.addAttribute("username", principal.getName());
     model.addAttribute("searchEmail", normalizedSearchEmail);
     model.addAttribute("searchResult", searchResult.orElse(null));
@@ -133,7 +133,7 @@ public class MemberViewController {
 
     try {
       Member createdMember = memberService.register(toEntity(request));
-      featuredMemberCacheService.recordView(createdMember.getId());
+      featuredMemberCacheService.recordView(createdMember);
       redirectAttributes.addFlashAttribute("successMessage", "Member created successfully.");
       redirectAttributes.addFlashAttribute("createdMember", createdMember);
       return "redirect:/";

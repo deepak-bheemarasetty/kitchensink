@@ -68,7 +68,7 @@
                 <tr>
                   <td th:text="${searchResult.name}">Jane Doe</td>
                   <td>
-                    <a th:href="@{/(searchEmail=${searchEmail}, selected=${searchResult.id})}"
+                    <a th:href="@{/(selected=${searchResult.id})}"
                        th:text="${searchResult.email}">jane@example.com</a>
                   </td>
                 </tr>
@@ -84,7 +84,7 @@
           <h2 id="featured-members-heading">Most Viewed Members</h2>
           <table><thead><tr><th>Name</th><th>Email</th></tr></thead><tbody>
             <tr th:if="${#lists.isEmpty(featuredMembers)}"><td colspan="2">No members viewed yet.</td></tr>
-            <tr th:each="member : ${featuredMembers}"><td th:text="${member.name}">Jane Doe</td><td><a th:href="@{/(searchEmail=${searchEmail}, selected=${member.id})}" th:text="${member.email}">jane@example.com</a></td></tr>
+            <tr th:each="member : ${featuredMembers}"><td th:text="${member.name}">Jane Doe</td><td><a th:href="@{/(selected=${member.id})}" th:text="${member.email}">jane@example.com</a></td></tr>
           </tbody></table>
         </section>
       </div>

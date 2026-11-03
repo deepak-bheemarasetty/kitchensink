@@ -33,24 +33,44 @@ public class FeaturedMemberCacheService {
         .toList();
   }
 
-  /** Loads a member from MongoDB and updates its in-memory view count. */
+  /** Returns a cached member or loads it from MongoDB, then updates its in-memory view count. */
   public Optional<Member> recordView(String memberId) {
-    return memberRepository
-        .findById(memberId)
-        .map(
-            member -> {
-              membersById.compute(
-                  memberId,
-                  (id, cached) ->
-                      new CachedMember(
-                          member.getId(),
-                          member.getName(),
-                          member.getEmail(),
-                          cached == null ? 1 : cached.viewCount() + 1));
-              return member;
-            });
+    CachedMember cached =
+        membersById.computeIfPresent(memberId, (id, member) -> member.withNextView());
+    if (cached != null) {
+      return Optional.of(cached.toMember());
+    }
+    return memberRepository.findById(memberId).map(this::recordView);
   }
 
-  /** Cached member list entry, including the in-memory view count. */
-  public record CachedMember(String id, String name, String email, long viewCount) {}
+  /** Adds a member already loaded by the caller to the cache and records its view. */
+  public Member recordView(Member member) {
+    membersById.compute(
+        member.getId(),
+        (id, cached) ->
+            new CachedMember(
+                member.getId(),
+                member.getName(),
+                member.getEmail(),
+                member.getPhoneNumber(),
+                cached == null ? 1 : cached.viewCount() + 1));
+    return member;
+  }
+
+  /** Cached member details, including the in-memory view count. */
+  public record CachedMember(
+      String id, String name, String email, String phoneNumber, long viewCount) {
+    private CachedMember withNextView() {
+      return new CachedMember(id, name, email, phoneNumber, viewCount + 1);
+    }
+
+    private Member toMember() {
+      Member member = new Member();
+      member.setId(id);
+      member.setName(name);
+      member.setEmail(email);
+      member.setPhoneNumber(phoneNumber);
+      return member;
+    }
+  }
 }

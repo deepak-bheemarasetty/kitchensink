@@ -53,12 +53,25 @@ class FeaturedMemberCacheServiceTest {
     assertThat(cacheService.getFeaturedMembers())
         .containsExactly(
             new FeaturedMemberCacheService.CachedMember(
-                "member-1", "Jane Doe", "jane@example.com", 1));
+                "member-1", "Jane Doe", "jane@example.com", "2125551234", 1));
 
     cacheService.recordView("member-1");
 
     assertThat(cacheService.getFeaturedMembers().getFirst().viewCount()).isEqualTo(2);
-    verify(memberRepository, org.mockito.Mockito.times(2)).findById("member-1");
+    verify(memberRepository).findById("member-1");
+  }
+
+  @Test
+  void selectingCachedMemberReturnsDetailsWithoutQueryingMongoDb() {
+    Member member = member("member-1", "Jane Doe", "jane@example.com");
+    cacheService.recordView(member);
+
+    assertThat(cacheService.recordView("member-1"))
+        .get()
+        .extracting(Member::getPhoneNumber)
+        .isEqualTo("2125551234");
+    assertThat(cacheService.getFeaturedMembers().getFirst().viewCount()).isEqualTo(2);
+    verifyNoInteractions(memberRepository);
   }
 
   @Test

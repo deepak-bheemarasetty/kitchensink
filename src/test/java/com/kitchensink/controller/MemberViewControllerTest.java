@@ -73,7 +73,8 @@ class MemberViewControllerTest {
   @Test
   void homeShowsGreetingAndFindAddPanesWithCachedMostViewedMembers() throws Exception {
     when(featuredMemberCacheService.getFeaturedMembers())
-        .thenReturn(List.of(new CachedMember("member-1", "Jane Doe", "jane@example.com", 3)));
+        .thenReturn(
+            List.of(new CachedMember("member-1", "Jane Doe", "jane@example.com", "2125551234", 3)));
 
     mockMvc
         .perform(get("/"))
@@ -86,6 +87,7 @@ class MemberViewControllerTest {
         .andExpect(content().string(containsString("Enter the full email for search")))
         .andExpect(content().string(containsString("name=\"_csrf\"")))
         .andExpect(content().string(containsString("View All Members")))
+        .andExpect(content().string(containsString("href=\"/?selected=member-1\"")))
         .andExpect(content().string(containsString("Welcome")));
 
     verify(memberPaginationService, never()).getSummaryPage(null, null, null, null);
@@ -112,6 +114,7 @@ class MemberViewControllerTest {
         .andExpect(content().string(containsString("2125551234")));
 
     verify(memberRepository).findByEmail("jane@example.com");
+    verify(featuredMemberCacheService).recordView(member);
     verify(featuredMemberCacheService).recordView("member-1");
   }
 
