@@ -75,7 +75,32 @@ class FeaturedMemberCacheServiceTest {
   }
 
   @Test
-  void featuredMembersAreOrderedByViewsThenNameThenIdAndLimitedToFive() {
+  void recordingSameMemberObjectIncrementsCachedCount() {
+    Member member = member("member-1", "Jane Doe", "jane@example.com");
+
+    cacheService.recordView(member);
+    cacheService.recordView(member);
+
+    assertThat(cacheService.getFeaturedMembers().getFirst().viewCount()).isEqualTo(2);
+  }
+
+  @Test
+  void evictsLeastViewedMemberWhenCacheLimitIsExceeded() {
+    when(memberRepository.findById("member-1000")).thenReturn(Optional.empty());
+    for (int i = 0; i <= 1_000; i++) {
+      cacheService.recordView(
+          member(
+              "member-%d".formatted(i),
+              "Member %04d".formatted(i),
+              "member%d@example.com".formatted(i)));
+    }
+
+    assertThat(cacheService.recordView("member-1000")).isEmpty();
+    verify(memberRepository).findById("member-1000");
+  }
+
+  @Test
+  void featuredMembersAreOrderedByViewsThenNameThenIdAndLimitedToTen() {
     List<Member> members =
         List.of(
             member("id-b", "Same Name", "b@example.com"),
@@ -92,7 +117,7 @@ class FeaturedMemberCacheServiceTest {
 
     assertThat(cacheService.getFeaturedMembers())
         .extracting(FeaturedMemberCacheService.CachedMember::id)
-        .containsExactly("id-gamma", "id-alpha", "id-beta", "id-a", "id-b");
+        .containsExactly("id-gamma", "id-alpha", "id-beta", "id-a", "id-b", "id-z");
   }
 
   private static Member member(String id, String name, String email) {

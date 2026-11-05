@@ -41,8 +41,8 @@ if (memberForm) {
         if (!/^[0-9]+$/.test(value)) {
           return "Enter numbers using 0-9 digits only.";
         }
-        if (value.length < 8 || value.length > 12) {
-          return "Phone number must contain 8 to 12 digits.";
+        if (value.length < 10 || value.length > 12) {
+          return "Phone number must contain 10 to 12 digits.";
         }
         return "";
       }

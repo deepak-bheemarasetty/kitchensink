@@ -17,21 +17,18 @@
         <section class="member-list-pane" aria-labelledby="member-list-heading">
           <h2 id="member-list-heading">Members</h2>
           <form class="data-table-toolbar" th:action="@{/members}" method="get">
-            <label for="member-filter">Filter members</label>
-            <input id="member-filter" name="email" type="search" th:value="${searchEmail}" placeholder="Filter by email" />
+            <label for="member-filter">Filter by email prefix (minimum 4 characters)</label>
+            <input id="member-filter" name="email" type="search" minlength="4" th:value="${searchEmail}" placeholder="Starts with…" aria-describedby="member-filter-error" />
+            <p id="member-filter-error" class="client-error" aria-live="polite"></p>
             <button type="submit" class="button-secondary">Filter</button>
             <a class="button-secondary" th:if="${!#strings.isEmpty(searchEmail)}" th:href="@{/members}">Clear</a>
           </form>
 
-          <p th:if="${numberedPage != null}" class="search-summary">
-            <strong th:text="${numberedPage.totalMembers}">0</strong> total members
-          </p>
-
           <table id="members-table" class="data-table">
             <thead>
               <tr>
-                <th><button type="button" class="sort-button" data-sort-key="name">Name <span aria-hidden="true">↕</span></button></th>
-                <th><button type="button" class="sort-button" data-sort-key="email">Email <span aria-hidden="true">↕</span></button></th>
+                <th>Email</th>
+                <th>Name</th>
                 <th>Phone Number</th>
               </tr>
             </thead>
@@ -40,25 +37,20 @@
                 <td colspan="3">No members found.</td>
               </tr>
               <tr th:each="member : ${members}">
-                <td th:text="${member.name}">Jane Doe</td>
                 <td th:text="${member.email}">jane@example.com</td>
+                <td th:text="${member.name}">Jane Doe</td>
                 <td th:text="${member.phoneNumber}">2125551234</td>
               </tr>
             </tbody>
           </table>
 
-          <nav class="pagination numbered-pagination" th:if="${numberedPage != null}" aria-label="Member pages">
-            <a class="page-arrow" th:classappend="${!numberedPage.hasPrevious} ? 'disabled' : ''"
-               th:href="${numberedPage.hasPrevious} ? @{/members(page=${numberedPage.page - 1}, email=${searchEmail})} : '#'"
-               aria-label="Previous page">‹</a>
-            <span th:each="pageNumber : ${#numbers.sequence(0, numberedPage.totalPages - 1)}"
-                  th:if="${pageNumber < 3 or pageNumber >= numberedPage.totalPages - 3 or (pageNumber >= numberedPage.page - 1 and pageNumber <= numberedPage.page + 1)}">
-              <a th:classappend="${pageNumber == numberedPage.page} ? 'current-page' : ''"
-                 th:href="@{/members(page=${pageNumber}, email=${searchEmail})}" th:text="${pageNumber + 1}">1</a>
-            </span>
-            <a class="page-arrow" th:classappend="${!numberedPage.hasNext} ? 'disabled' : ''"
-               th:href="${numberedPage.hasNext} ? @{/members(page=${numberedPage.page + 1}, email=${searchEmail})} : '#'"
-               aria-label="Next page">›</a>
+          <nav class="pagination" th:if="${cursorPage != null}" aria-label="Member pages">
+            <a class="page-arrow" th:if="${cursorPage.hasPrevious}"
+               th:href="@{/members(beforeEmail=${cursorPage.previousEmail}, email=${searchEmail})}"
+               aria-label="Previous page">‹ Previous</a>
+            <a class="page-arrow" th:if="${cursorPage.hasNext}"
+               th:href="@{/members(afterEmail=${cursorPage.nextEmail}, email=${searchEmail})}"
+               aria-label="Next page">Next ›</a>
           </nav>
         </section>
 
@@ -71,11 +63,11 @@
                aria-describedby="search-warning-message">
         <h2 id="search-warning-title">Member Not Found</h2>
         <p id="search-warning-message">
-          No member was found with email <strong th:text="${searchEmail}">name@example.com</strong>.
+          No member email starts with <strong th:text="${searchEmail}">name</strong>.
         </p>
         <a class="primary" th:href="@{/members}">Close</a>
       </section>
     </div>
-    <script th:src="@{/js/members-table.js}" defer></script>
+    <script th:src="@{/js/member-filter-validation.js}" defer></script>
   </body>
 </html>

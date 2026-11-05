@@ -48,7 +48,7 @@ class MemberServiceTest {
 
   @Test
   void registerSavesMemberWhenEmailIsNew() {
-    when(memberRepository.findByEmail(member.getEmail())).thenReturn(Optional.empty());
+    when(memberRepository.findByEmailIgnoreCase(member.getEmail())).thenReturn(Optional.empty());
     when(memberRepository.save(member)).thenReturn(member);
 
     assertThat(memberService.register(member)).isSameAs(member);
@@ -58,7 +58,8 @@ class MemberServiceTest {
 
   @Test
   void registerRejectsExistingEmailWithoutSaving() {
-    when(memberRepository.findByEmail(member.getEmail())).thenReturn(Optional.of(member));
+    when(memberRepository.findByEmailIgnoreCase(member.getEmail()))
+        .thenReturn(Optional.of(member));
 
     assertThatThrownBy(() -> memberService.register(member))
         .isInstanceOf(DuplicateEmailException.class)
@@ -67,10 +68,25 @@ class MemberServiceTest {
   }
 
   @Test
+  void registerTrimsNameAndNormalizesEmailBeforeSaving() {
+    member.setName(" Jane Doe ");
+    member.setEmail(" Jane@Example.COM ");
+    when(memberRepository.findByEmailIgnoreCase("jane@example.com")).thenReturn(Optional.empty());
+    when(memberRepository.save(member)).thenReturn(member);
+
+    memberService.register(member);
+
+    assertThat(member.getName()).isEqualTo("Jane Doe");
+    assertThat(member.getEmail()).isEqualTo("jane@example.com");
+    verify(memberRepository).findByEmailIgnoreCase("jane@example.com");
+    verify(memberRepository).save(member);
+  }
+
+  @Test
   void concurrentRegistrationRaceIsResolvedByMongoUniqueEmailIndex() throws Exception {
     CountDownLatch registrationChecksComplete = new CountDownLatch(2);
     AtomicBoolean firstInsert = new AtomicBoolean(true);
-    when(memberRepository.findByEmail(member.getEmail()))
+    when(memberRepository.findByEmailIgnoreCase(member.getEmail()))
         .thenAnswer(
             invocation -> {
               registrationChecksComplete.countDown();

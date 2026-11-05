@@ -4,15 +4,17 @@ import com.kitchensink.model.Member;
 import com.kitchensink.repository.MemberRepository;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import org.springframework.stereotype.Service;
 
-/** Tracks most-viewed member summaries in memory for the home page. */
+/** Tracks bounded in-memory member view counts for the home page. */
 @Service
 public class FeaturedMemberCacheService {
   private static final int FEATURED_MEMBER_LIMIT = 10;
+  private static final int MAX_TRACKED_MEMBERS = 1_000;
 
   private static final Comparator<CachedMember> MOST_VIEWED_ORDER =
       Comparator.comparingLong(CachedMember::viewCount)
@@ -54,7 +56,18 @@ public class FeaturedMemberCacheService {
                 member.getEmail(),
                 member.getPhoneNumber(),
                 cached == null ? 1 : cached.viewCount() + 1));
+    trimCache();
     return member;
+  }
+
+  private synchronized void trimCache() {
+    while (membersById.size() > MAX_TRACKED_MEMBERS) {
+      Map.Entry<String, CachedMember> leastViewed =
+          membersById.entrySet().stream()
+              .max(Map.Entry.comparingByValue(MOST_VIEWED_ORDER))
+              .orElseThrow();
+      membersById.remove(leastViewed.getKey(), leastViewed.getValue());
+    }
   }
 
   /** Cached member details, including the in-memory view count. */

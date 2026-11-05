@@ -34,7 +34,7 @@ public class MemberController {
   public record MemberResponse(String id, String name, String email, String phoneNumber) {}
 
   /** Cursor links for moving through a bounded member-list response. */
-  public record MemberCursor(String name, String email) {}
+  public record MemberCursor(String email) {}
 
   /** A bounded member page and cursor values for adjacent requests. */
   public record MemberPageResponse(
@@ -61,18 +61,16 @@ public class MemberController {
   /** Lists a bounded member page using forward or backward keyset cursors. */
   @GetMapping
   public MemberPageResponse listAllMembers(
-      @RequestParam(required = false) String afterName,
       @RequestParam(required = false) String afterEmail,
-      @RequestParam(required = false) String beforeName,
       @RequestParam(required = false) String beforeEmail) {
     MemberCursorPage page =
-        memberPaginationService.getPage(afterName, afterEmail, beforeName, beforeEmail);
+        memberPaginationService.getPage(afterEmail, beforeEmail);
     return new MemberPageResponse(
         page.members().stream().map(this::toResponse).toList(),
         page.hasPrevious(),
         page.hasNext(),
-        page.hasPrevious() ? new MemberCursor(page.previousName(), page.previousEmail()) : null,
-        page.hasNext() ? new MemberCursor(page.nextName(), page.nextEmail()) : null);
+        page.hasPrevious() ? new MemberCursor(page.previousEmail()) : null,
+        page.hasNext() ? new MemberCursor(page.nextEmail()) : null);
   }
 
   /** Looks up a member by its identifier. */

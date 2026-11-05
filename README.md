@@ -67,6 +67,7 @@ Authentication uses Auth0 OpenID Connect for browser sign-in and signed JWT bear
 - Allowed Callback URL: `http://localhost:9080/kitchensink/login/oauth2/code/auth0`
 - Allowed Logout URL: `http://localhost:9080/kitchensink/`
 - Set the Auth0 tenant's Default Audience to the API identifier.
+- Create API permissions `read:members` and `write:members`, enable RBAC and adding permissions to access tokens, and request the matching permission as an OAuth scope. Member list/detail requests require `read:members`; registration requires `write:members`.
 
 Set these values in the root `.env` using your Auth0 Regular Web Application credentials and API identifier:
 
@@ -85,6 +86,8 @@ mvn spring-boot:run
 
 The issuer URL must end in `/`. The application has no local username or password; without the Auth0 settings it will fail to start.
 
+The browser session expires after 30 minutes without requests. When an expired session next accesses a protected page, the user must start the Auth0 sign-in flow again, which requests reauthentication. REST API authentication remains stateless and is unaffected by this browser-session timeout.
+
 To build and run the executable JAR instead:
 
 ```shell
@@ -102,11 +105,11 @@ java -jar target/kitchensink.jar --server.port=9081
 
 The browser UI is available under the `/kitchensink` context path and has two main pages:
 
-- `/kitchensink/` shows the Find and Add panes, exact-email search, up to five most-viewed members, and the registration form. The cache starts empty on application startup and is populated as member details are viewed; it resets when the application restarts.
-- `/kitchensink/members` shows a two-pane member browser: the keyset-paginated, searchable list is on the left and selected member details are on the right. The list is ordered by name and email and loads at most 20 records per MongoDB request, plus one lookahead record to determine whether a next page exists. Next/Previous use the last/first `(name, email)` cursor; there is no offset skip, full count query, or numbered page list.
-- Selecting a member name opens its details in the right pane and increments its in-memory view count. Phone numbers are only shown in the details pane.
+- `/kitchensink/` shows the Find and Add panes, exact-email search, up to ten members with the highest tracked view counts, and the registration form. The cache starts empty on application startup, tracks at most 1,000 members, and resets when the application restarts. View counts for members evicted at capacity are no longer retained.
+- `/kitchensink/members` shows a searchable member list ordered by email. Its filter matches email addresses that start with the entered prefix and requires at least four characters. It loads at most 20 records per MongoDB request, plus one lookahead record to determine whether another page exists. Next/Previous use the exclusive email cursor; there is no offset skip, full count query, or numbered page list.
+- Member rows show email, name, and phone number in that order.
 
-The All Members page supports exact email search, shows only the match with its details, and offers a clear-search link to restore the full paginated list. An unsuccessful search displays a dismissible warning. Member list rows show only name and email. The home-page form validates name, email, and phone in the browser as the user types and blocks invalid submissions; server-side validation remains enabled as a safety net. Browser sign-in redirects to Auth0 and returns to the application; the app does not store user passwords.
+The All Members page supports case-insensitive email-prefix filtering and offers a clear-search link to restore the full paginated list. An unsuccessful filter displays a dismissible warning. Member list rows show email, name, and phone number. The home-page form validates name, email, and phone in the browser as the user types and blocks invalid submissions; server-side validation remains enabled as a safety net. Browser sign-in redirects to Auth0 and returns to the application; the app does not store user passwords.
 
 ## Member API
 
@@ -116,19 +119,19 @@ The following examples use a valid Auth0 access token for the configured API aud
 
 ### List members
 
-Returns one keyset-paginated page ordered by name and email: at most 20 members, plus a lookahead row used internally to determine whether another page exists. The response includes `members`, `hasPrevious`, `hasNext`, and cursor objects. These `curl` examples work in macOS/Linux shells; in Windows PowerShell, use `curl.exe` instead of `curl`.
+Returns one keyset-paginated page ordered by email: at most 20 members, plus a lookahead row used internally to determine whether another page exists. The response includes `members`, `hasPrevious`, `hasNext`, and email cursor objects. These `curl` examples work in macOS/Linux shells; in Windows PowerShell, use `curl.exe` instead of `curl`.
 
 ```shell
 curl --header 'Authorization: Bearer REPLACE_WITH_ACCESS_TOKEN' 'http://localhost:9080/kitchensink/rest/members'
 ```
 
-Use the `nextCursor` name and email from the response as the exclusive cursor for the next page. `--data-urlencode` safely encodes values such as names containing spaces:
+Use the `nextCursor` email from the response as the exclusive cursor for the next page. `--data-urlencode` safely encodes the address:
 
 ```shell
-curl --header 'Authorization: Bearer REPLACE_WITH_ACCESS_TOKEN' --get --data-urlencode 'afterName=Jane Doe' --data-urlencode 'afterEmail=jane@example.com' 'http://localhost:9080/kitchensink/rest/members'
+curl --header 'Authorization: Bearer REPLACE_WITH_ACCESS_TOKEN' --get --data-urlencode 'afterEmail=jane@example.com' 'http://localhost:9080/kitchensink/rest/members'
 ```
 
-Use the complete `previousCursor` pair as `beforeName` and `beforeEmail` to navigate backward. Supply exactly one complete cursor pair per request; the endpoint does not accept a page number or offset.
+Use the `previousCursor` email as `beforeEmail` to navigate backward. Supply at most one cursor per request; the endpoint does not accept a page number or offset. The list is ordered by email to match its single-field cursor and the existing unique email index.
 
 ### Get a member
 
@@ -151,12 +154,12 @@ A successful registration returns `201 Created`, the saved member as JSON, and a
 
 ### Member validation
 
-- `name` is required, must contain 1 to 25 letters and spaces, and cannot contain digits or special characters.
+- `name` is required, must contain 1 to 25 letters and spaces, must include at least one letter, and cannot contain digits or special characters. Names are trimmed before saving.
 - `email` is required and must be a valid email address.
-- `phoneNumber` is required and must contain 8 to 12 digits.
-- Email addresses must be unique.
+- `phoneNumber` is required and must contain 10 to 12 digits.
+- Email addresses are trimmed, stored in lowercase, and unique without regard to case.
 
-The REST API and Actuator endpoints accept stateless JWT bearer tokens issued by the configured Auth0 tenant. The issuer and API audience are validated; missing or invalid tokens receive `401 Unauthorized`. CSRF protection is disabled for these stateless requests; the browser UI uses an OIDC login session and CSRF tokens for state-changing form submissions.
+The REST API and Actuator endpoints accept stateless JWT bearer tokens issued by the configured Auth0 tenant. The issuer and API audience are validated; missing or invalid tokens receive `401 Unauthorized`. REST member reads require the `read:members` scope and registration requires `write:members`; requests without the required permission are forbidden. CSRF protection is disabled for these stateless requests; the browser UI uses an OIDC login session and CSRF tokens for state-changing form submissions.
 
 ## Operational metrics
 

@@ -7,11 +7,10 @@ import com.kitchensink.service.DuplicateEmailException;
 import com.kitchensink.service.FeaturedMemberCacheService;
 import com.kitchensink.service.MemberPaginationService;
 import com.kitchensink.service.MemberPaginationService.MemberCursorPage;
-import com.kitchensink.service.MemberPaginationService.NumberedMemberPage;
 import com.kitchensink.service.MemberService;
 import jakarta.validation.Valid;
 import java.security.Principal;
-import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -56,11 +55,12 @@ public class MemberViewController {
       Principal principal,
       Model model) {
     model.addAttribute("member", new MemberRequest("", "", ""));
-    String normalizedSearchEmail = searchEmail == null ? "" : searchEmail.trim();
+    String normalizedSearchEmail =
+        searchEmail == null ? "" : searchEmail.trim().toLowerCase(Locale.ROOT);
     Optional<Member> searchResult =
         normalizedSearchEmail.isEmpty()
             ? Optional.empty()
-            : memberRepository.findByEmail(normalizedSearchEmail);
+            : memberRepository.findByEmailIgnoreCase(normalizedSearchEmail);
     searchResult.ifPresent(featuredMemberCacheService::recordView);
     model.addAttribute("username", principal.getName());
     model.addAttribute("searchEmail", normalizedSearchEmail);
@@ -77,41 +77,22 @@ public class MemberViewController {
   /** Lists all members in the browser UI. */
   @GetMapping("/members")
   public String listMembers(
-      @RequestParam(required = false) String afterName,
       @RequestParam(required = false) String afterEmail,
-      @RequestParam(required = false) String beforeName,
       @RequestParam(required = false) String beforeEmail,
       @RequestParam(required = false) String email,
       @RequestParam(required = false) String selected,
-      @RequestParam(defaultValue = "0") int page,
       Model model) {
-    afterName = normalizeCursor(afterName);
     afterEmail = normalizeCursor(afterEmail);
-    beforeName = normalizeCursor(beforeName);
     beforeEmail = normalizeCursor(beforeEmail);
-    model.addAttribute("afterName", afterName);
     model.addAttribute("afterEmail", afterEmail);
-    model.addAttribute("beforeName", beforeName);
     model.addAttribute("beforeEmail", beforeEmail);
     String searchEmail = email == null ? "" : email.trim();
-    MemberCursorPage memberPage = null;
-    List<Member> members;
-    if (!searchEmail.isEmpty()) {
-      NumberedMemberPage filteredPage = memberPaginationService.getNumberedPage(page, searchEmail);
-      members = filteredPage.members();
-      model.addAttribute("numberedPage", filteredPage);
-      model.addAttribute("searchEmail", searchEmail);
-      model.addAttribute("searchNotFound", false);
-    } else {
-      NumberedMemberPage numberedPage = memberPaginationService.getNumberedPage(page);
-      members = numberedPage.members();
-      model.addAttribute("numberedPage", numberedPage);
-      model.addAttribute("searchEmail", "");
-      model.addAttribute("searchNotFound", false);
-    }
-
-    model.addAttribute("members", members);
+    MemberCursorPage memberPage =
+        memberPaginationService.getSummaryPage(afterEmail, beforeEmail, searchEmail);
+    model.addAttribute("members", memberPage.members());
     model.addAttribute("cursorPage", memberPage);
+    model.addAttribute("searchEmail", searchEmail);
+    model.addAttribute("searchNotFound", !searchEmail.isEmpty() && memberPage.members().isEmpty());
     model.addAttribute(
         "selectedMember",
         selected == null ? null : featuredMemberCacheService.recordView(selected).orElse(null));

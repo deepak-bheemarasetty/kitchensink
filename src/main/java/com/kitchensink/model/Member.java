@@ -19,13 +19,11 @@ package com.kitchensink.model;
 
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotEmpty;
-import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.io.Serializable;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
@@ -35,20 +33,19 @@ import org.springframework.data.mongodb.core.mapping.Document;
  * @author Deepak Bheemarasetty
  */
 @SuppressWarnings("serial")
-@CompoundIndex(name = "member_name_email_cursor", def = "{'name': 1, 'email': 1}")
 @Document(collection = "members")
 public class Member implements Serializable {
 
   @Id private String id;
 
-  @NotNull
+  @NotBlank
   @Size(min = 1, max = 25)
-  @Pattern(regexp = "[\\p{L} ]+", message = "{name_validation_message}")
+  @Pattern(regexp = "(?=.*\\p{L})[\\p{L} ]+", message = "{name_validation_message}")
   private String name;
 
-  @NotNull @NotEmpty @Email @Indexed(unique = true) private String email;
+  @NotBlank @Email @Indexed(unique = true) private String email;
 
-  @NotNull
+  @NotBlank
   @Size(min = 10, max = 12)
   @Digits(fraction = 0, integer = 12)
   private String phoneNumber;

@@ -24,7 +24,6 @@ class MemberMappingTest {
     assertThat(entity.getRequiredIdProperty().getName()).isEqualTo("id");
     assertThat(email.findAnnotation(Indexed.class)).isNotNull();
     assertThat(email.findAnnotation(Indexed.class).unique()).isTrue();
-    assertThat(Member.class.getAnnotation(CompoundIndex.class).def())
-        .isEqualTo("{'name': 1, 'email': 1}");
+    assertThat(Member.class.getAnnotation(CompoundIndex.class)).isNull();
   }
 }

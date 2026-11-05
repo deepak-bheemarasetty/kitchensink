@@ -36,7 +36,7 @@
             <label for="email">Email</label><input id="email" type="email" th:field="*{email}" required aria-describedby="email-client-error" />
             <p id="email-client-error" class="client-error" aria-live="polite"></p>
             <div class="field-error" th:if="${#fields.hasErrors('email')}" th:errors="*{email}"></div>
-            <label for="phoneNumber">Phone Number</label><input id="phoneNumber" type="tel" th:field="*{phoneNumber}" inputmode="numeric" minlength="8" maxlength="12" required aria-describedby="phoneNumber-client-error" />
+            <label for="phoneNumber">Phone Number</label><input id="phoneNumber" type="tel" th:field="*{phoneNumber}" inputmode="numeric" minlength="10" maxlength="12" required aria-describedby="phoneNumber-client-error" />
             <p id="phoneNumber-client-error" class="client-error" aria-live="polite"></p>
             <div class="field-error" th:if="${#fields.hasErrors('phoneNumber')}" th:errors="*{phoneNumber}"></div>
             <button type="submit" class="primary">Create Member</button>

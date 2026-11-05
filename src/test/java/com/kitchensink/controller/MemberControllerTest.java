@@ -40,7 +40,7 @@ import org.springframework.web.server.ResponseStatusException;
  */
 @WebMvcTest(MemberController.class)
 @Import(SecurityConfiguration.class)
-@WithMockUser
+@WithMockUser(authorities = {"SCOPE_read:members", "SCOPE_write:members"})
 class MemberControllerTest {
   @Autowired private MockMvc mockMvc;
 
@@ -54,7 +54,7 @@ class MemberControllerTest {
   void listMembersReturnsBoundedCursorPage() throws Exception {
     Member member = member("Jane Doe", "jane@example.com");
     member.setId("507f1f77bcf86cd799439011");
-    when(memberPaginationService.getPage(null, null, null, null))
+    when(memberPaginationService.getPage(null, null))
         .thenReturn(new MemberCursorPage(List.of(member), false, true));
 
     mockMvc
@@ -66,7 +66,6 @@ class MemberControllerTest {
         .andExpect(jsonPath("$.members[0].phoneNumber").value("2125551234"))
         .andExpect(jsonPath("$.members[0].password").doesNotExist())
         .andExpect(jsonPath("$.hasNext").value(true))
-        .andExpect(jsonPath("$.nextCursor.name").value("Jane Doe"))
         .andExpect(jsonPath("$.nextCursor.email").value("jane@example.com"));
   }
 
@@ -74,29 +73,31 @@ class MemberControllerTest {
   void listMembersPassesForwardCursorToPaginationService() throws Exception {
     Member member = member("Jane Doe", "jane@example.com");
     member.setId("507f1f77bcf86cd799439011");
-    when(memberPaginationService.getPage("Jane Doe", "jane@example.com", null, null))
+    when(memberPaginationService.getPage("jane@example.com", null))
         .thenReturn(new MemberCursorPage(List.of(member), true, false));
 
     mockMvc
         .perform(
             get("/rest/members")
-                .param("afterName", "Jane Doe")
                 .param("afterEmail", "jane@example.com"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.hasPrevious").value(true))
-        .andExpect(jsonPath("$.previousCursor.name").value("Jane Doe"));
+        .andExpect(jsonPath("$.previousCursor.email").value("jane@example.com"));
 
-    verify(memberPaginationService).getPage("Jane Doe", "jane@example.com", null, null);
+    verify(memberPaginationService).getPage("jane@example.com", null);
   }
 
   @Test
-  void listMembersRejectsIncompleteCursor() throws Exception {
-    when(memberPaginationService.getPage("Jane Doe", null, null, null))
+  void listMembersRejectsBothCursorsAtOnce() throws Exception {
+    when(memberPaginationService.getPage("jane@example.com", "other@example.com"))
         .thenThrow(new ResponseStatusException(
             org.springframework.http.HttpStatus.BAD_REQUEST, "Invalid cursor"));
 
     mockMvc
-        .perform(get("/rest/members").param("afterName", "Jane Doe"))
+        .perform(
+            get("/rest/members")
+                .param("afterEmail", "jane@example.com")
+                .param("beforeEmail", "other@example.com"))
         .andExpect(status().isBadRequest());
   }
 
@@ -161,13 +162,40 @@ class MemberControllerTest {
   @Test
   @WithAnonymousUser
   void validJwtCanAccessMemberApi() throws Exception {
-    when(memberPaginationService.getPage(null, null, null, null))
+    when(memberPaginationService.getPage(null, null))
         .thenReturn(new MemberCursorPage(List.of(), false, false));
 
     mockMvc
-        .perform(get("/rest/members").with(jwt().jwt(token -> token.subject("auth0|user-1"))))
+        .perform(
+            get("/rest/members")
+                .with(
+                    jwt()
+                        .jwt(token -> token.subject("auth0|user-1"))
+                        .authorities(
+                            new org.springframework.security.core.authority.SimpleGrantedAuthority(
+                                "SCOPE_read:members"))))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.members").isEmpty());
+  }
+
+  @Test
+  @WithMockUser(authorities = "SCOPE_write:members")
+  void memberReadRequiresReadScope() throws Exception {
+    mockMvc.perform(get("/rest/members")).andExpect(status().isForbidden());
+  }
+
+  @Test
+  @WithMockUser(authorities = "SCOPE_read:members")
+  void memberCreationRequiresWriteScope() throws Exception {
+    mockMvc
+        .perform(
+            post("/rest/members")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"name":"Jane Doe","email":"jane@example.com","phoneNumber":"2125551234"}
+                    """))
+        .andExpect(status().isForbidden());
   }
 
   @Test

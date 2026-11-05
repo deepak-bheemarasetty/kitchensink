@@ -62,6 +62,19 @@ class MemberViewControllerTest {
 
   @Test
   @WithAnonymousUser
+  void apiEndpointsRequireBearerAuthentication() throws Exception {
+    mockMvc.perform(get("/rest/members")).andExpect(status().isUnauthorized());
+    mockMvc.perform(post("/rest/members")).andExpect(status().isUnauthorized());
+    mockMvc.perform(get("/actuator/health")).andExpect(status().isUnauthorized());
+  }
+
+  @Test
+  void apiRejectsUnmappedRequests() throws Exception {
+    mockMvc.perform(get("/rest/unknown")).andExpect(status().isForbidden());
+  }
+
+  @Test
+  @WithAnonymousUser
   void loginPageOffersAuth0SignIn() throws Exception {
     mockMvc
         .perform(get("/login"))
@@ -90,21 +103,22 @@ class MemberViewControllerTest {
         .andExpect(content().string(containsString("href=\"/?selected=member-1\"")))
         .andExpect(content().string(containsString("Welcome")));
 
-    verify(memberPaginationService, never()).getSummaryPage(null, null, null, null);
+    verify(memberPaginationService, never()).getSummaryPage(null, null, "");
   }
 
   @Test
   void homeSearchShowsExactEmailMatchAndSelectedDetailsDialog() throws Exception {
     Member member = member("Jane Doe", "jane@example.com");
     member.setId("member-1");
-    when(memberRepository.findByEmail("jane@example.com")).thenReturn(Optional.of(member));
+    when(memberRepository.findByEmailIgnoreCase("jane@example.com"))
+        .thenReturn(Optional.of(member));
     when(featuredMemberCacheService.recordView("member-1")).thenReturn(Optional.of(member));
     when(featuredMemberCacheService.getFeaturedMembers()).thenReturn(List.of());
 
     mockMvc
         .perform(
             get("/")
-                .param("searchEmail", " jane@example.com ")
+                .param("searchEmail", " Jane@Example.COM ")
                 .param("selected", "member-1"))
         .andExpect(status().isOk())
         .andExpect(model().attribute("searchEmail", "jane@example.com"))
@@ -113,7 +127,7 @@ class MemberViewControllerTest {
         .andExpect(content().string(containsString("id=\"member-details-dialog\"")))
         .andExpect(content().string(containsString("2125551234")));
 
-    verify(memberRepository).findByEmail("jane@example.com");
+    verify(memberRepository).findByEmailIgnoreCase("jane@example.com");
     verify(featuredMemberCacheService).recordView(member);
     verify(featuredMemberCacheService).recordView("member-1");
   }
@@ -121,7 +135,8 @@ class MemberViewControllerTest {
   @Test
   void homeSearchShowsNotFoundMessageAndDoesNotShowDetailsForUnknownMember()
       throws Exception {
-    when(memberRepository.findByEmail("missing@example.com")).thenReturn(Optional.empty());
+    when(memberRepository.findByEmailIgnoreCase("missing@example.com"))
+        .thenReturn(Optional.empty());
     when(featuredMemberCacheService.getFeaturedMembers()).thenReturn(List.of());
     when(featuredMemberCacheService.recordView("unknown-member")).thenReturn(Optional.empty());
 
@@ -142,10 +157,10 @@ class MemberViewControllerTest {
   }
 
   @Test
-  void allMembersPageShowsOnlyNameEmailAndDetailsLink() throws Exception {
+  void allMembersPageShowsNameEmailAndPhone() throws Exception {
     Member member = member("Jane Doe", "jane@example.com");
     member.setId("member-1");
-    when(memberPaginationService.getSummaryPage(null, null, null, null))
+    when(memberPaginationService.getSummaryPage(null, null, ""))
         .thenReturn(new MemberCursorPage(List.of(member), false, false));
 
     mockMvc
@@ -154,80 +169,77 @@ class MemberViewControllerTest {
         .andExpect(view().name("all-members"))
         .andExpect(model().attributeExists("members", "cursorPage"))
         .andExpect(content().string(containsString("Jane Doe")))
-        .andExpect(content().string(containsString("jane@example.com")))
-        .andExpect(content().string(containsString("Member Details")));
+        .andExpect(content().string(containsString("jane@example.com")));
 
     String content =
         mockMvc.perform(get("/members")).andReturn().getResponse().getContentAsString();
-    assertThat(content).doesNotContain("2125551234");
+    assertThat(content).contains("2125551234");
   }
 
   @Test
   void allMembersPageUsesTwentyMemberPagesAndNavigation() throws Exception {
     Member member = member("Zoe Doe", "zoe@example.com");
     member.setId("member-21");
-    when(memberPaginationService.getSummaryPage("Taylor", "t@example.com", null, null))
+    when(memberPaginationService.getSummaryPage("t@example.com", null, ""))
         .thenReturn(new MemberCursorPage(List.of(member), true, true));
 
     mockMvc
-        .perform(get("/members").param("afterName", "Taylor").param("afterEmail", "t@example.com"))
+        .perform(get("/members").param("afterEmail", "t@example.com"))
         .andExpect(status().isOk())
         .andExpect(content().string(containsString("Zoe Doe")))
-        .andExpect(content().string(containsString("beforeName=Zoe")))
-        .andExpect(content().string(containsString("afterName=Zoe")));
+        .andExpect(content().string(containsString("beforeEmail=zoe@example.com")))
+        .andExpect(content().string(containsString("afterEmail=zoe@example.com")));
 
-    verify(memberPaginationService).getSummaryPage("Taylor", "t@example.com", null, null);
+    verify(memberPaginationService).getSummaryPage("t@example.com", null, "");
   }
 
   @Test
-  void selectingMemberShowsDetailsInRightPaneWithoutLeavingMembersPage() throws Exception {
+  void selectedMemberIsRecordedAndPhoneIsShownInList() throws Exception {
     Member member = member("Jane Doe", "jane@example.com");
     member.setId("member-1");
-    when(memberPaginationService.getSummaryPage(null, null, null, null))
+    when(memberPaginationService.getSummaryPage(null, null, ""))
         .thenReturn(new MemberCursorPage(List.of(member), false, false));
     when(featuredMemberCacheService.recordView("member-1")).thenReturn(Optional.of(member));
 
-    mockMvc
-        .perform(
+    var result =
+        mockMvc
+            .perform(
             get("/members")
                 .param("selected", "member-1")
                 .param("email", "")
-                .param("afterName", "")
                 .param("afterEmail", "")
-                .param("beforeName", "")
                 .param("beforeEmail", ""))
-        .andExpect(status().isOk())
-        .andExpect(view().name("all-members"))
-        .andExpect(content().string(containsString("2125551234")))
-        .andExpect(content().string(containsString("Jane Doe")));
+            .andExpect(status().isOk())
+            .andExpect(view().name("all-members"))
+            .andExpect(content().string(containsString("Jane Doe")))
+            .andReturn();
 
+    assertThat(result.getResponse().getContentAsString()).contains("2125551234");
     verify(featuredMemberCacheService).recordView("member-1");
   }
 
   @Test
-  void searchingByEmailShowsOnlyMatchingMemberAndItsDetails() throws Exception {
+  void searchingByEmailFiltersMemberList() throws Exception {
     Member member = member("Jane Doe", "jane@example.com");
     member.setId("member-1");
-    when(memberRepository.findByEmail("jane@example.com"))
-        .thenReturn(Optional.of(member));
-    when(featuredMemberCacheService.recordView("member-1")).thenReturn(Optional.of(member));
+    when(memberPaginationService.getSummaryPage(null, null, "jane@example.com"))
+        .thenReturn(new MemberCursorPage(List.of(member), false, false));
 
     mockMvc
         .perform(get("/members").param("email", "jane@example.com"))
         .andExpect(status().isOk())
         .andExpect(view().name("all-members"))
         .andExpect(content().string(containsString("Jane Doe")))
-        .andExpect(content().string(containsString("2125551234")))
-        .andExpect(content().string(containsString("Clear Search")));
+        .andExpect(content().string(containsString("jane@example.com")))
+        .andExpect(content().string(containsString(">Clear</a>")));
 
-    verify(memberRepository).findByEmail("jane@example.com");
-    verify(memberPaginationService, never()).getSummaryPage(null, null, null, null);
+    verify(memberPaginationService).getSummaryPage(null, null, "jane@example.com");
   }
 
   @Test
   void unknownEmailShowsDismissibleWarningAndClearSearchLink() throws Exception {
-    when(memberRepository.findByEmail("missing@example.com"))
-        .thenReturn(Optional.empty());
+    when(memberPaginationService.getSummaryPage(null, null, "missing@example.com"))
+        .thenReturn(new MemberCursorPage(List.of(), false, false));
 
     mockMvc
         .perform(get("/members").param("email", "missing@example.com"))
@@ -239,7 +251,7 @@ class MemberViewControllerTest {
 
   @Test
   void clearingSearchLoadsTheFullPagedMemberList() throws Exception {
-    when(memberPaginationService.getSummaryPage(null, null, null, null))
+    when(memberPaginationService.getSummaryPage(null, null, ""))
         .thenReturn(new MemberCursorPage(List.of(), false, false));
 
     mockMvc
@@ -247,7 +259,7 @@ class MemberViewControllerTest {
         .andExpect(status().isOk())
         .andExpect(view().name("all-members"));
 
-    verify(memberPaginationService).getSummaryPage(null, null, null, null);
+    verify(memberPaginationService).getSummaryPage(null, null, "");
   }
 
   @Test

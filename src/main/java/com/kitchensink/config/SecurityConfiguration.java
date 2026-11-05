@@ -6,6 +6,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplicat
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -13,6 +14,8 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
+import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizationRequestResolver;
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.web.SecurityFilterChain;
@@ -48,6 +51,17 @@ public class SecurityConfiguration {
   }
 
   @Bean
+  OAuth2AuthorizationRequestResolver authorizationRequestResolver(
+      ClientRegistrationRepository clientRegistrationRepository) {
+    DefaultOAuth2AuthorizationRequestResolver resolver =
+        new DefaultOAuth2AuthorizationRequestResolver(
+            clientRegistrationRepository, "/oauth2/authorization");
+    resolver.setAuthorizationRequestCustomizer(
+        builder -> builder.additionalParameters(parameters -> parameters.put("prompt", "login")));
+    return resolver;
+  }
+
+  @Bean
   @Order(1)
   SecurityFilterChain apiSecurityFilterChain(HttpSecurity http) throws Exception {
     return http
@@ -55,13 +69,25 @@ public class SecurityConfiguration {
         .csrf(csrf -> csrf.disable())
         .sessionManagement(
             session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-        .authorizeHttpRequests(authorize -> authorize.anyRequest().authenticated())
+        .authorizeHttpRequests(
+            authorize ->
+                authorize
+                    .requestMatchers(HttpMethod.GET, "/rest/members", "/rest/members/**")
+                    .hasAuthority("SCOPE_read:members")
+                    .requestMatchers(HttpMethod.POST, "/rest/members")
+                    .hasAuthority("SCOPE_write:members")
+                    .requestMatchers("/rest/**")
+                    .denyAll()
+                    .anyRequest()
+                    .authenticated())
         .oauth2ResourceServer(resourceServer -> resourceServer.jwt(Customizer.withDefaults()))
         .build();
   }
 
   @Bean
-  SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+  SecurityFilterChain securityFilterChain(
+      HttpSecurity http, OAuth2AuthorizationRequestResolver authorizationRequestResolver)
+      throws Exception {
     return http
         .sessionManagement(
             session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
@@ -72,7 +98,14 @@ public class SecurityConfiguration {
                     .permitAll()
                     .anyRequest()
                     .authenticated())
-        .oauth2Login(oauth2Login -> oauth2Login.loginPage("/login"))
+        .oauth2Login(
+            oauth2Login ->
+                oauth2Login
+                    .loginPage("/login")
+                    .authorizationEndpoint(
+                        authorization ->
+                            authorization.authorizationRequestResolver(
+                                authorizationRequestResolver)))
         .build();
   }
 }
