@@ -29,16 +29,18 @@
               <tr>
                 <th>Email</th>
                 <th>Name</th>
+                <th>Country Code</th>
                 <th>Phone Number</th>
               </tr>
             </thead>
             <tbody>
               <tr th:if="${#lists.isEmpty(members)}">
-                <td colspan="3">No members found.</td>
+                <td colspan="4">No members found.</td>
               </tr>
               <tr th:each="member : ${members}">
                 <td th:text="${member.email}">jane@example.com</td>
                 <td th:text="${member.name}">Jane Doe</td>
+                <td th:text="${member.countryCode}">1</td>
                 <td th:text="${member.phoneNumber}">2125551234</td>
               </tr>
             </tbody>

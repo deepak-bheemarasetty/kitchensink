@@ -64,7 +64,13 @@ public class MemberPaginationService {
     }
     query.limit(PAGE_SIZE + 1);
     if (summaryOnly) {
-      query.fields().include("id").include("email").include("name").include("phoneNumber");
+      query
+          .fields()
+          .include("id")
+          .include("email")
+          .include("name")
+          .include("phoneNumber")
+          .include("countryCode");
     }
 
     List<Member> results = new ArrayList<>(mongoTemplate.find(query, Member.class));

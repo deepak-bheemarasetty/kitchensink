@@ -7,9 +7,14 @@ import org.junit.jupiter.api.Test;
 class MemberRequestTest {
   @Test
   void preservesNullNameAndEmail() {
-    MemberRequest request = new MemberRequest(null, null, null);
+    MemberRequest request = MemberRequest.of(null, null, null, null);
 
-    assertThat(request.name()).isNull();
-    assertThat(request.email()).isNull();
+    assertThat(request.getName()).isNull();
+    assertThat(request.getEmail()).isNull();
+  }
+
+  @Test
+  void constructorIsPrivate() throws Exception {
+    assertThat(MemberRequest.class.getDeclaredConstructor().canAccess(null)).isFalse();
   }
 }

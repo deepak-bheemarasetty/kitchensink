@@ -62,7 +62,7 @@ class MemberPaginationServiceTest {
     assertThat(page.members()).hasSize(1);
     Query query = captureQuery();
     assertThat(query.getFieldsObject())
-        .containsKeys("id", "name", "email", "phoneNumber");
+        .containsKeys("id", "name", "email", "phoneNumber", "countryCode");
   }
 
   @Test
@@ -190,11 +190,12 @@ class MemberPaginationServiceTest {
   }
 
   private static Member member(int index) {
-    Member member = new Member();
-    member.setId("id-" + index);
+    Member member = Member.create();
+    member.setId((long) index);
     member.setName("Member %02d".formatted(index));
     member.setEmail("member%02d@example.com".formatted(index));
     member.setPhoneNumber("2125551234");
+    member.setCountryCode(1);
     return member;
   }
 }

@@ -1,4 +1,5 @@
 target/
 .vscode/
 .env
+CHECKPOINT.md
 !.env.example

@@ -34,7 +34,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * Tests the member REST endpoints and request validation.
+ * Tests member REST endpoints and delegates persisted constraints to MongoDB.
  *
  * @author Deepak Bheemarasetty
  */
@@ -53,17 +53,18 @@ class MemberControllerTest {
   @Test
   void listMembersReturnsBoundedCursorPage() throws Exception {
     Member member = member("Jane Doe", "jane@example.com");
-    member.setId("507f1f77bcf86cd799439011");
+    member.setId(1L);
     when(memberPaginationService.getPage(null, null))
         .thenReturn(new MemberCursorPage(List.of(member), false, true));
 
     mockMvc
         .perform(get("/rest/members"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.members[0].id").value("507f1f77bcf86cd799439011"))
+        .andExpect(jsonPath("$.members[0].id").value(1))
         .andExpect(jsonPath("$.members[0].name").value("Jane Doe"))
         .andExpect(jsonPath("$.members[0].email").value("jane@example.com"))
         .andExpect(jsonPath("$.members[0].phoneNumber").value("2125551234"))
+        .andExpect(jsonPath("$.members[0].countryCode").value(1))
         .andExpect(jsonPath("$.members[0].password").doesNotExist())
         .andExpect(jsonPath("$.hasNext").value(true))
         .andExpect(jsonPath("$.nextCursor.email").value("jane@example.com"));
@@ -72,7 +73,7 @@ class MemberControllerTest {
   @Test
   void listMembersPassesForwardCursorToPaginationService() throws Exception {
     Member member = member("Jane Doe", "jane@example.com");
-    member.setId("507f1f77bcf86cd799439011");
+    member.setId(1L);
     when(memberPaginationService.getPage("jane@example.com", null))
         .thenReturn(new MemberCursorPage(List.of(member), true, false));
 
@@ -104,29 +105,30 @@ class MemberControllerTest {
   @Test
   void getMemberReturnsMemberWhenPresent() throws Exception {
     Member member = member("Jane Doe", "jane@example.com");
-    member.setId("507f1f77bcf86cd799439017");
-    when(memberRepository.findById("507f1f77bcf86cd799439017")).thenReturn(Optional.of(member));
+    member.setId(2L);
+    when(memberRepository.findById(2L)).thenReturn(Optional.of(member));
 
     mockMvc
-        .perform(get("/rest/members/507f1f77bcf86cd799439017"))
+        .perform(get("/rest/members/2"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.id").value("507f1f77bcf86cd799439017"))
+        .andExpect(jsonPath("$.id").value(2))
         .andExpect(jsonPath("$.name").value("Jane Doe"))
         .andExpect(jsonPath("$.email").value("jane@example.com"))
-        .andExpect(jsonPath("$.phoneNumber").value("2125551234"));
+        .andExpect(jsonPath("$.phoneNumber").value("2125551234"))
+        .andExpect(jsonPath("$.countryCode").value(1));
   }
 
   @Test
   void getMemberReturnsNotFoundWhenMissing() throws Exception {
-    when(memberRepository.findById("507f1f77bcf86cd799439999")).thenReturn(Optional.empty());
+    when(memberRepository.findById(3L)).thenReturn(Optional.empty());
 
-    mockMvc.perform(get("/rest/members/507f1f77bcf86cd799439999")).andExpect(status().isNotFound());
+    mockMvc.perform(get("/rest/members/3")).andExpect(status().isNotFound());
   }
 
   @Test
   void createMemberReturnsCreatedAndLocation() throws Exception {
     Member member = member("Jane Doe", "jane@example.com");
-    member.setId("507f1f77bcf86cd799439017");
+    member.setId(2L);
     when(memberService.register(any(Member.class))).thenReturn(member);
 
     mockMvc
@@ -135,22 +137,27 @@ class MemberControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     """
-                    {"name":"Jane Doe","email":"jane@example.com","phoneNumber":"2125551234"}
+                    {
+                      "name":"Jane Doe","email":"jane@example.com",
+                      "phoneNumber":"2125551234","countryCode":1
+                    }
                     """))
         .andExpect(status().isCreated())
         .andExpect(
             header().string(
-                "Location", "http://localhost/rest/members/507f1f77bcf86cd799439017"))
-        .andExpect(jsonPath("$.id").value("507f1f77bcf86cd799439017"))
+                "Location", "http://localhost/rest/members/2"))
+        .andExpect(jsonPath("$.id").value(2))
         .andExpect(jsonPath("$.name").value("Jane Doe"))
         .andExpect(jsonPath("$.email").value("jane@example.com"))
-        .andExpect(jsonPath("$.phoneNumber").value("2125551234"));
+        .andExpect(jsonPath("$.phoneNumber").value("2125551234"))
+        .andExpect(jsonPath("$.countryCode").value(1));
 
     var memberCaptor = forClass(Member.class);
     verify(memberService).register(memberCaptor.capture());
     assertThat(memberCaptor.getValue().getName()).isEqualTo("Jane Doe");
     assertThat(memberCaptor.getValue().getEmail()).isEqualTo("jane@example.com");
     assertThat(memberCaptor.getValue().getPhoneNumber()).isEqualTo("2125551234");
+    assertThat(memberCaptor.getValue().getCountryCode()).isEqualTo(1);
   }
 
   @Test
@@ -193,65 +200,34 @@ class MemberControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     """
-                    {"name":"Jane Doe","email":"jane@example.com","phoneNumber":"2125551234"}
+                    {
+                      "name":"Jane Doe","email":"jane@example.com",
+                      "phoneNumber":"2125551234","countryCode":1
+                    }
                     """))
         .andExpect(status().isForbidden());
   }
 
   @Test
-  void createMemberWithMissingNameReturnsFieldValidationError() throws Exception {
-    mockMvc
-        .perform(
-            post("/rest/members")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    """
-                    {"email":"jane@example.com","phoneNumber":"2125551234"}
-                    """))
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.name").exists());
-  }
+  void createMemberDelegatesFieldConstraintsToMongoDb() throws Exception {
+    Member saved = member("Jane1!", "abc@gmail");
+    saved.setPhoneNumber("123");
+    saved.setCountryCode(10000);
+    saved.setId(4L);
+    when(memberService.register(any(Member.class))).thenReturn(saved);
 
-  @Test
-  void createMemberWithInvalidPhoneReturnsFieldValidationError() throws Exception {
     mockMvc
         .perform(
             post("/rest/members")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     """
-                    {"name":"Jane Doe","email":"jane@example.com","phoneNumber":"123"}
+                    {"name":"Jane1!","email":"abc@gmail","phoneNumber":"123","countryCode":10000}
                     """))
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.phoneNumber").exists());
-  }
-
-  @Test
-  void createMemberWithDigitsInNameReturnsResolvedValidationMessage() throws Exception {
-    mockMvc
-        .perform(
-            post("/rest/members")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    """
-                    {"name":"Jane1","email":"jane@example.com","phoneNumber":"2125551234"}
-                    """))
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.name").value("Name must not contain digits or special characters"));
-  }
-
-  @Test
-  void createMemberWithSpecialCharactersInNameReturnsValidationError() throws Exception {
-    mockMvc
-        .perform(
-            post("/rest/members")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    """
-                    {"name":"Jane-Doe!","email":"jane@example.com","phoneNumber":"2125551234"}
-                    """))
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.name").value("Name must not contain digits or special characters"));
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.email").value("abc@gmail"))
+        .andExpect(jsonPath("$.phoneNumber").value("123"))
+        .andExpect(jsonPath("$.countryCode").value(10000));
   }
 
   @Test
@@ -265,7 +241,10 @@ class MemberControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     """
-                    {"name":"Jane Doe","email":"jane@example.com","phoneNumber":"2125551234"}
+                    {
+                      "name":"Jane Doe","email":"jane@example.com",
+                      "phoneNumber":"2125551234","countryCode":1
+                    }
                     """))
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.email").value("Email taken"));
@@ -282,17 +261,21 @@ class MemberControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     """
-                    {"name":"Jane Doe","email":"jane@example.com","phoneNumber":"2125551234"}
+                    {
+                      "name":"Jane Doe","email":"jane@example.com",
+                      "phoneNumber":"2125551234","countryCode":1
+                    }
                     """))
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.error").value("The request conflicts with existing data"));
   }
 
   private static Member member(String name, String email) {
-    Member member = new Member();
+    Member member = Member.create();
     member.setName(name);
     member.setEmail(email);
     member.setPhoneNumber("2125551234");
+    member.setCountryCode(1);
     return member;
   }
 }

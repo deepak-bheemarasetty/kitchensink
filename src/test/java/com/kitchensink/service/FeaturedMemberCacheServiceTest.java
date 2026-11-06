@@ -36,37 +36,37 @@ class FeaturedMemberCacheServiceTest {
 
   @Test
   void missingMemberDoesNotEnterCache() {
-    when(memberRepository.findById("missing")).thenReturn(Optional.empty());
+    when(memberRepository.findById(9999L)).thenReturn(Optional.empty());
 
-    assertThat(cacheService.recordView("missing")).isEmpty();
+    assertThat(cacheService.recordView(9999L)).isEmpty();
     assertThat(cacheService.getFeaturedMembers()).isEmpty();
 
-    verify(memberRepository).findById("missing");
+    verify(memberRepository).findById(9999L);
   }
 
   @Test
   void recordViewAddsMemberAndIncrementsItsInMemoryCount() {
-    Member member = member("member-1", "Jane Doe", "jane@example.com");
-    when(memberRepository.findById("member-1")).thenReturn(Optional.of(member));
+    Member member = member(1L, "Jane Doe", "jane@example.com");
+    when(memberRepository.findById(1L)).thenReturn(Optional.of(member));
 
-    assertThat(cacheService.recordView("member-1")).contains(member);
+    assertThat(cacheService.recordView(1L)).contains(member);
     assertThat(cacheService.getFeaturedMembers())
         .containsExactly(
             new FeaturedMemberCacheService.CachedMember(
-                "member-1", "Jane Doe", "jane@example.com", "2125551234", 1));
+                1L, "Jane Doe", "jane@example.com", "2125551234", 1, 1));
 
-    cacheService.recordView("member-1");
+    cacheService.recordView(1L);
 
     assertThat(cacheService.getFeaturedMembers().getFirst().viewCount()).isEqualTo(2);
-    verify(memberRepository).findById("member-1");
+    verify(memberRepository).findById(1L);
   }
 
   @Test
   void selectingCachedMemberReturnsDetailsWithoutQueryingMongoDb() {
-    Member member = member("member-1", "Jane Doe", "jane@example.com");
+    Member member = member(1L, "Jane Doe", "jane@example.com");
     cacheService.recordView(member);
 
-    assertThat(cacheService.recordView("member-1"))
+    assertThat(cacheService.recordView(1L))
         .get()
         .extracting(Member::getPhoneNumber)
         .isEqualTo("2125551234");
@@ -76,7 +76,7 @@ class FeaturedMemberCacheServiceTest {
 
   @Test
   void recordingSameMemberObjectIncrementsCachedCount() {
-    Member member = member("member-1", "Jane Doe", "jane@example.com");
+    Member member = member(1L, "Jane Doe", "jane@example.com");
 
     cacheService.recordView(member);
     cacheService.recordView(member);
@@ -86,46 +86,47 @@ class FeaturedMemberCacheServiceTest {
 
   @Test
   void evictsLeastViewedMemberWhenCacheLimitIsExceeded() {
-    when(memberRepository.findById("member-1000")).thenReturn(Optional.empty());
+    when(memberRepository.findById(1000L)).thenReturn(Optional.empty());
     for (int i = 0; i <= 1_000; i++) {
       cacheService.recordView(
           member(
-              "member-%d".formatted(i),
+              (long) i,
               "Member %04d".formatted(i),
               "member%d@example.com".formatted(i)));
     }
 
-    assertThat(cacheService.recordView("member-1000")).isEmpty();
-    verify(memberRepository).findById("member-1000");
+    assertThat(cacheService.recordView(1000L)).isEmpty();
+    verify(memberRepository).findById(1000L);
   }
 
   @Test
   void featuredMembersAreOrderedByViewsThenNameThenIdAndLimitedToTen() {
     List<Member> members =
         List.of(
-            member("id-b", "Same Name", "b@example.com"),
-            member("id-a", "Same Name", "a@example.com"),
-            member("id-z", "Zed", "zed@example.com"),
-            member("id-alpha", "Alpha", "alpha@example.com"),
-            member("id-beta", "Beta", "beta@example.com"),
-            member("id-gamma", "Gamma", "gamma@example.com"));
+            member(2L, "Same Name", "b@example.com"),
+            member(1L, "Same Name", "a@example.com"),
+            member(6L, "Zed", "zed@example.com"),
+            member(3L, "Alpha", "alpha@example.com"),
+            member(4L, "Beta", "beta@example.com"),
+            member(5L, "Gamma", "gamma@example.com"));
     members.forEach(member -> when(memberRepository.findById(member.getId()))
         .thenReturn(Optional.of(member)));
 
     members.forEach(member -> cacheService.recordView(member.getId()));
-    cacheService.recordView("id-gamma");
+    cacheService.recordView(5L);
 
     assertThat(cacheService.getFeaturedMembers())
         .extracting(FeaturedMemberCacheService.CachedMember::id)
-        .containsExactly("id-gamma", "id-alpha", "id-beta", "id-a", "id-b", "id-z");
+        .containsExactly(5L, 3L, 4L, 1L, 2L, 6L);
   }
 
-  private static Member member(String id, String name, String email) {
-    Member member = new Member();
+  private static Member member(Long id, String name, String email) {
+    Member member = Member.create();
     member.setId(id);
     member.setName(name);
     member.setEmail(email);
     member.setPhoneNumber("2125551234");
+    member.setCountryCode(1);
     return member;
   }
 }

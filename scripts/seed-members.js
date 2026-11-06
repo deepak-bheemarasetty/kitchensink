@@ -1,6 +1,5 @@
 const members = [
   {
-    _id: ObjectId("507f1f77bcf86cd799439011"),
     name: "John Smith",
     email: "john.smith@mailinator.com",
     phoneNumber: "2125551212"
@@ -79,7 +78,19 @@ const members = [
   { name: "Paige Wood", email: "paige.wood@example.com", phoneNumber: "2125551072" },
   { name: "Leon Barnes", email: "leon.barnes@example.com", phoneNumber: "2125551073" },
   { name: "Faith Ross", email: "faith.ross@example.com", phoneNumber: "2125551074" }
-];
+].map((member, index) => {
+  const timestamp = new Date();
+  return {
+    ...member,
+    _id: NumberLong(index + 1),
+    countryCode: 1,
+    createdBy: "seed",
+    creationDate: timestamp,
+    lastUpdatedBy: "seed",
+    lastUpdateDate: timestamp,
+    version: NumberLong(0)
+  };
+});
 
 db.members.bulkWrite(
   members.map(member => ({
@@ -89,4 +100,10 @@ db.members.bulkWrite(
       upsert: true
     }
   }))
+);
+
+db.sequences.updateOne(
+  { _id: "members" },
+  { $setOnInsert: { sequence: NumberLong(members.length) } },
+  { upsert: true }
 );

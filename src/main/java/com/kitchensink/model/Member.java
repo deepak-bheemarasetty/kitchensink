@@ -1,85 +1,69 @@
-/*
- * Kitchen Sink application source
- * Copyright 2015, Red Hat, Inc. and/or its affiliates, and individual
- * contributors by the @authors tag. See the copyright.txt in the
- * distribution for a full listing of individual contributors.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- * http://www.apache.org/licenses/LICENSE-2.0
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package com.kitchensink.model;
 
-import jakarta.validation.constraints.Digits;
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Pattern;
-import jakarta.validation.constraints.Size;
 import java.io.Serializable;
+import java.time.Instant;
+import org.bson.types.ObjectId;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.annotation.Version;
 import org.springframework.data.mongodb.core.mapping.Document;
 
-/**
- * Persistent member details and their validation constraints.
- *
- * @author Deepak Bheemarasetty
- */
+/** Member directory record. */
 @SuppressWarnings("serial")
 @Document(collection = "members")
 public class Member implements Serializable {
+  @Id private ObjectId id;
+  private String memberId;
+  private String firstName;
+  private String lastName;
+  private String fullNameLower;
+  private String email;
+  private String emailLower;
+  private String phone;
+  private String country;
+  private String status;
+  private Instant createdAt;
+  private ObjectId createdBy;
+  private Instant updatedAt;
+  private ObjectId updatedBy;
+  @Version private Integer version;
+  private Instant deletedAt;
+  private ObjectId deletedBy;
 
-  @Id private String id;
+  private Member() {}
 
-  @NotBlank
-  @Size(min = 1, max = 25)
-  @Pattern(regexp = "(?=.*\\p{L})[\\p{L} ]+", message = "{name_validation_message}")
-  private String name;
-
-  @NotBlank @Email @Indexed(unique = true) private String email;
-
-  @NotBlank
-  @Size(min = 10, max = 12)
-  @Digits(fraction = 0, integer = 12)
-  private String phoneNumber;
-
-  public String getId() {
-    return id;
-  }
-
-  public void setId(String id) {
-    this.id = id;
-  }
-
-  public String getName() {
-    return name;
-  }
-
-  public void setName(String name) {
-    this.name = name;
-  }
-
-  public String getEmail() {
-    return email;
-  }
-
-  public void setEmail(String email) {
-    this.email = email;
-  }
-
-  public String getPhoneNumber() {
-    return phoneNumber;
-  }
-
-  public void setPhoneNumber(String phoneNumber) {
-    this.phoneNumber = phoneNumber;
-  }
-
+  public static Member create() { return new Member(); }
+  public ObjectId getId() { return id; }
+  public void setId(ObjectId id) { this.id = id; }
+  public String getMemberId() { return memberId; }
+  public void setMemberId(String memberId) { this.memberId = memberId; }
+  public String getFirstName() { return firstName; }
+  public void setFirstName(String firstName) { this.firstName = firstName; }
+  public String getLastName() { return lastName; }
+  public void setLastName(String lastName) { this.lastName = lastName; }
+  public String getFullNameLower() { return fullNameLower; }
+  public void setFullNameLower(String fullNameLower) { this.fullNameLower = fullNameLower; }
+  public String getEmail() { return email; }
+  public void setEmail(String email) { this.email = email; }
+  public String getEmailLower() { return emailLower; }
+  public void setEmailLower(String emailLower) { this.emailLower = emailLower; }
+  public String getPhone() { return phone; }
+  public void setPhone(String phone) { this.phone = phone; }
+  public String getCountry() { return country; }
+  public void setCountry(String country) { this.country = country; }
+  public String getStatus() { return status; }
+  public void setStatus(String status) { this.status = status; }
+  public Instant getCreatedAt() { return createdAt; }
+  public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
+  public ObjectId getCreatedBy() { return createdBy; }
+  public void setCreatedBy(ObjectId createdBy) { this.createdBy = createdBy; }
+  public Instant getUpdatedAt() { return updatedAt; }
+  public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
+  public ObjectId getUpdatedBy() { return updatedBy; }
+  public void setUpdatedBy(ObjectId updatedBy) { this.updatedBy = updatedBy; }
+  public Integer getVersion() { return version; }
+  public void setVersion(Integer version) { this.version = version; }
+  public Instant getDeletedAt() { return deletedAt; }
+  public void setDeletedAt(Instant deletedAt) { this.deletedAt = deletedAt; }
+  public ObjectId getDeletedBy() { return deletedBy; }
+  public void setDeletedBy(ObjectId deletedBy) { this.deletedBy = deletedBy; }
 }

@@ -48,7 +48,7 @@ Get-Service MongoDB
 
 On macOS installed with Homebrew, use `brew services start mongodb-community@8.0`. On Linux systems using systemd, use `sudo systemctl start mongod` and check status with `sudo systemctl status mongod`.
 
-Seed 75 sample members from the project root. This command is safe to run more than once and does not overwrite existing member records:
+Use a fresh `kitchensink` database for this version; the member `_id` is now a numeric sequence and existing ObjectId-based member records are not migrated. The application installs MongoDB schema validation on startup. Seed 75 sample members from the project root; the script includes the required audit fields and initializes the sequence counter:
 
 ```shell
 mongosh "mongodb://localhost:27017/kitchensink" scripts/seed-members.js
@@ -105,11 +105,11 @@ java -jar target/kitchensink.jar --server.port=9081
 
 The browser UI is available under the `/kitchensink` context path and has two main pages:
 
-- `/kitchensink/` shows the Find and Add panes, exact-email search, up to ten members with the highest tracked view counts, and the registration form. The cache starts empty on application startup, tracks at most 1,000 members, and resets when the application restarts. View counts for members evicted at capacity are no longer retained.
+- `/kitchensink/` shows the Find and Add panes, exact-email search, and the registration form.
 - `/kitchensink/members` shows a searchable member list ordered by email. Its filter matches email addresses that start with the entered prefix and requires at least four characters. It loads at most 20 records per MongoDB request, plus one lookahead record to determine whether another page exists. Next/Previous use the exclusive email cursor; there is no offset skip, full count query, or numbered page list.
-- Member rows show email, name, and phone number in that order.
+- Member rows show email, name, country code, and phone number in that order.
 
-The All Members page supports case-insensitive email-prefix filtering and offers a clear-search link to restore the full paginated list. An unsuccessful filter displays a dismissible warning. Member list rows show email, name, and phone number. The home-page form validates name, email, and phone in the browser as the user types and blocks invalid submissions; server-side validation remains enabled as a safety net. Browser sign-in redirects to Auth0 and returns to the application; the app does not store user passwords.
+The All Members page supports case-insensitive email-prefix filtering and offers a clear-search link to restore the full paginated list. An unsuccessful filter displays a dismissible warning. The registration form submits fields without client-side validation; MongoDB enforces the persisted schema. Browser sign-in redirects to Auth0 and returns to the application; the app does not store user passwords.
 
 ## Member API
 
@@ -135,7 +135,7 @@ Use the `previousCursor` email as `beforeEmail` to navigate backward. Supply at 
 
 ### Get a member
 
-Returns the member with the requested MongoDB ObjectId. To get an ID, list the members:
+Returns the member with the requested numeric sequence ID. To get an ID, list the members:
 
 ```shell
 curl --header 'Authorization: Bearer REPLACE_WITH_ACCESS_TOKEN' 'http://localhost:9080/kitchensink/rest/members'
@@ -144,20 +144,21 @@ curl --header 'Authorization: Bearer REPLACE_WITH_ACCESS_TOKEN' 'http://localhos
 
 ### Register a member
 
-Send a name, email, and phone number:
+Send a name, email, country code, and phone number:
 
 ```shell
-curl --header 'Authorization: Bearer REPLACE_WITH_ACCESS_TOKEN' --header 'Content-Type: application/json' --data '{"name":"Jane Doe","email":"jane@example.com","phoneNumber":"2125551234"}' 'http://localhost:9080/kitchensink/rest/members'
+curl --header 'Authorization: Bearer REPLACE_WITH_ACCESS_TOKEN' --header 'Content-Type: application/json' --data '{"name":"Jane Doe","email":"jane@example.com","countryCode":1,"phoneNumber":"2125551234"}' 'http://localhost:9080/kitchensink/rest/members'
 ```
 
-A successful registration returns `201 Created`, the saved member as JSON, and a `Location` header for the new member. The API returns `400 Bad Request` with field errors when validation fails, `404 Not Found` when a requested ID does not exist, and `409 Conflict` when the email is already registered or another data integrity constraint is violated.
+A successful registration returns `201 Created`, the saved member as JSON, and a `Location` header for the new member. MongoDB schema violations return `400 Bad Request`; the API returns `404 Not Found` when a requested ID does not exist and `409 Conflict` when the email is already registered or another data integrity constraint is violated.
 
-### Member validation
+### MongoDB member schema
 
-- `name` is required, must contain 1 to 25 letters and spaces, must include at least one letter, and cannot contain digits or special characters. Names are trimmed before saving.
-- `email` is required and must be a valid email address.
-- `phoneNumber` is required and must contain 10 to 12 digits.
-- Email addresses are trimmed, stored in lowercase, and unique without regard to case.
+- `id` is a `Long` generated from an atomic counter in the `sequences` collection.
+- `name` is required text up to 40 characters; `email` is required text up to 40 characters and must include a dotted domain.
+- `phoneNumber` is required text containing 4 to 15 digits; `countryCode` is a required integer from 1 through 9999.
+- `createdBy` and `lastUpdatedBy` come from the authenticated username; creation and update timestamps and the version are managed by Spring Data MongoDB.
+- Email is trimmed and lowercased before storage, and a unique index enforces uniqueness. Other field constraints are enforced by MongoDB schema validation, not application Bean Validation.
 
 The REST API and Actuator endpoints accept stateless JWT bearer tokens issued by the configured Auth0 tenant. The issuer and API audience are validated; missing or invalid tokens receive `401 Unauthorized`. REST member reads require the `read:members` scope and registration requires `write:members`; requests without the required permission are forbidden. CSRF protection is disabled for these stateless requests; the browser UI uses an OIDC login session and CSRF tokens for state-changing form submissions.
 
@@ -193,8 +194,8 @@ Run the JUnit 5 suite and enforce 100% line and branch coverage for application 
 mvn verify
 ```
 
-The suite covers application startup, authentication, controller responses and validation, registration rules, and MongoDB document mapping. Unit tests do not require a running MongoDB server. For an end-to-end local check, start MongoDB and the app as described above, then exercise the authenticated API with the examples. JaCoCo writes an HTML coverage report to `target/site/jacoco/index.html`.
+The suite covers application startup, authentication, controller responses, registration, sequence generation, MongoDB schema enforcement, and document mapping. A running MongoDB server is required for the integration tests. For an end-to-end local check, start MongoDB and the app as described above, then exercise the authenticated API with the examples. JaCoCo writes an HTML coverage report to `target/site/jacoco/index.html`.
 
 ## Configuration
 
-Application settings are in `src/main/resources/application.properties`. The MongoDB URI is read from `MONGODB_URI`, with a local MongoDB default. Spring Data creates the unique email index when the application connects to MongoDB.
+Application settings are in `src/main/resources/application.properties`. The MongoDB URI is read from `MONGODB_URI`, with a local MongoDB default. Spring Data creates the unique email index, and startup configures the member collection's schema validator.
