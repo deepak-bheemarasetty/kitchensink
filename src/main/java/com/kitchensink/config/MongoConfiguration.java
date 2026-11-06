@@ -8,11 +8,18 @@ import org.springframework.data.mongodb.config.EnableMongoAuditing;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.data.mongodb.MongoDatabaseFactory;
+import org.springframework.data.mongodb.MongoTransactionManager;
 
 /** Provides authenticated actor metadata for MongoDB auditing. */
 @Configuration
 @EnableMongoAuditing
 public class MongoConfiguration {
+  @Bean
+  MongoTransactionManager mongoTransactionManager(MongoDatabaseFactory databaseFactory) {
+    return new MongoTransactionManager(databaseFactory);
+  }
+
   @Bean
   AuditorAware<String> auditorAware() {
     return () ->

@@ -137,7 +137,9 @@ The All Members page supports case-insensitive email-prefix filtering and offers
 
 ## Member API
 
-All endpoints use the `/rest/members` path and exchange JSON.
+Member endpoints use `/api/v1/members` and exchange JSON. List responses use keyset cursors and limits capped at 100. Create requests require an `Idempotency-Key` header. Member IDs are MongoDB ObjectIds. Bulk/file import is outside this API's scope.
+
+For interactive API testing, import [`postman/KitchenSink-API.postman_collection.json`](postman/KitchenSink-API.postman_collection.json) into Postman. Its default `baseUrl` matches the local server (`http://localhost:9080/kitchensink`). Set the collection's `username` and `password` variables for Basic Auth, or switch collection Authorization to Bearer Token and provide an Auth0 access token. Copy returned member and user IDs into the corresponding collection variables before calling ID-based routes.
 
 The following examples use a valid Auth0 access token for the configured API audience. Replace `REPLACE_WITH_ACCESS_TOKEN` with that token. On Windows PowerShell, use `curl.exe` in place of `curl` (PowerShell may define `curl` as an alias).
 
@@ -146,13 +148,13 @@ The following examples use a valid Auth0 access token for the configured API aud
 Returns one keyset-paginated page ordered by email: at most 20 members, plus a lookahead row used internally to determine whether another page exists. The response includes `members`, `hasPrevious`, `hasNext`, and email cursor objects. These `curl` examples work in macOS/Linux shells; in Windows PowerShell, use `curl.exe` instead of `curl`.
 
 ```shell
-curl --header 'Authorization: Bearer REPLACE_WITH_ACCESS_TOKEN' 'http://localhost:9080/kitchensink/rest/members'
+curl --header 'Authorization: Bearer REPLACE_WITH_ACCESS_TOKEN' 'http://localhost:9080/kitchensink/api/v1/members'
 ```
 
 Use the `nextCursor` email from the response as the exclusive cursor for the next page. `--data-urlencode` safely encodes the address:
 
 ```shell
-curl --header 'Authorization: Bearer REPLACE_WITH_ACCESS_TOKEN' --get --data-urlencode 'afterEmail=jane@example.com' 'http://localhost:9080/kitchensink/rest/members'
+curl --header 'Authorization: Bearer REPLACE_WITH_ACCESS_TOKEN' --get --data-urlencode 'q=jane' 'http://localhost:9080/kitchensink/api/v1/members'
 ```
 
 Use the `previousCursor` email as `beforeEmail` to navigate backward. Supply at most one cursor per request; the endpoint does not accept a page number or offset. The list is ordered by email to match its single-field cursor and the existing unique email index.
@@ -162,16 +164,16 @@ Use the `previousCursor` email as `beforeEmail` to navigate backward. Supply at 
 Returns the member with the requested numeric sequence ID. To get an ID, list the members:
 
 ```shell
-curl --header 'Authorization: Bearer REPLACE_WITH_ACCESS_TOKEN' 'http://localhost:9080/kitchensink/rest/members'
-curl --header 'Authorization: Bearer REPLACE_WITH_ACCESS_TOKEN' 'http://localhost:9080/kitchensink/rest/members/REPLACE_WITH_MEMBER_ID'
+curl --header 'Authorization: Bearer REPLACE_WITH_ACCESS_TOKEN' 'http://localhost:9080/kitchensink/api/v1/members'
+curl --header 'Authorization: Bearer REPLACE_WITH_ACCESS_TOKEN' 'http://localhost:9080/kitchensink/api/v1/members/REPLACE_WITH_MEMBER_ID'
 ```
 
 ### Register a member
 
-Send a name, email, country code, and phone number:
+Send `firstName`, optional `lastName`, email, and E.164 phone with an idempotency key:
 
 ```shell
-curl --header 'Authorization: Bearer REPLACE_WITH_ACCESS_TOKEN' --header 'Content-Type: application/json' --data '{"name":"Jane Doe","email":"jane@example.com","countryCode":1,"phoneNumber":"2125551234"}' 'http://localhost:9080/kitchensink/rest/members'
+curl --header 'Authorization: Bearer REPLACE_WITH_ACCESS_TOKEN' --header 'Idempotency-Key: demo-request-001' --header 'Content-Type: application/json' --data '{"firstName":"Jane","lastName":"Doe","email":"jane@example.com","phone":"+12125551234"}' 'http://localhost:9080/kitchensink/api/v1/members'
 ```
 
 A successful registration returns `201 Created`, the saved member as JSON, and a `Location` header for the new member. MongoDB schema violations return `400 Bad Request`; the API returns `404 Not Found` when a requested ID does not exist and `409 Conflict` when the email is already registered or another data integrity constraint is violated.

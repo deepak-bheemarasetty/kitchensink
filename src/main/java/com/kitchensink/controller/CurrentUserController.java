@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RestController;
 /** Returns the authenticated user's effective permissions for the client UI. */
 @RestController
 public class CurrentUserController {
-  @GetMapping("/rest/me")
+  @GetMapping("/api/v1/me")
   public CurrentUserResponse currentUser(Authentication authentication) {
     List<String> permissions = authentication.getAuthorities().stream()
         .map(authority -> authority.getAuthority())

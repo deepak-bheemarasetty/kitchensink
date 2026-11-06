@@ -8,8 +8,8 @@ const schemas = {
         additionalProperties: false,
         properties: {
           _id: { bsonType: "objectId" },
-          username: { bsonType: "string", minLength: 3, maxLength: 32 },
-          usernameLower: { bsonType: "string", minLength: 3, maxLength: 32 },
+          username: { bsonType: "string", minLength: 3, maxLength: 254, pattern: "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$" },
+          usernameLower: { bsonType: "string", minLength: 3, maxLength: 254, pattern: "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$" },
           passwordHash: { bsonType: "string", minLength: 1 },
           roles: { bsonType: "array", minItems: 1, maxItems: 10, uniqueItems: true, items: { bsonType: "string" } },
           isActive: { bsonType: "bool" },

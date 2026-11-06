@@ -6,6 +6,7 @@ import org.bson.types.ObjectId;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.Version;
 import org.springframework.data.mongodb.core.mapping.Document;
+import com.kitchensink.validation.Validator;
 
 /** Member directory record. */
 @SuppressWarnings("serial")
@@ -64,4 +65,6 @@ public class Member implements Serializable {
   public void setDeletedAt(Instant deletedAt) { this.deletedAt = deletedAt; }
   public ObjectId getDeletedBy() { return deletedBy; }
   public void setDeletedBy(ObjectId deletedBy) { this.deletedBy = deletedBy; }
+
+  public void validate() { Validator.member(this); }
 }

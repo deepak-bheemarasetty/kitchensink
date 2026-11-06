@@ -4,8 +4,6 @@ import java.time.Instant;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
-import java.util.Set;
-import java.util.regex.Pattern;
 import java.util.UUID;
 import org.bson.Document;
 import org.bson.types.ObjectId;
@@ -26,14 +24,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.HttpStatus;
+import com.kitchensink.model.Role;
+import com.kitchensink.validation.Validator;
 
 /** Administrative APIs for application roles and local user accounts. */
 @RestController
-@RequestMapping("/rest")
+@RequestMapping("/api/v1")
 public class AccessAdministrationController {
-  private static final Set<String> PERMISSIONS = Set.of(
-      "member:view", "member:create", "member:update", "member:delete", "user:manage", "role:manage");
-  private static final Pattern USERNAME = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9._-]{2,31}$");
   private final MongoTemplate mongoTemplate;
   private final PasswordEncoder passwordEncoder;
 
@@ -48,14 +45,15 @@ public class AccessAdministrationController {
   @PostMapping("/roles")
   public Document createRole(@RequestBody RoleRequest request, Authentication actor) {
     require(actor, "role:manage");
-    if (request.name() == null || !request.name().matches("[a-z0-9-]{2,30}")
-        || request.description() == null || request.description().length() > 200) {
-      throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "Invalid role name or description");
-    }
-    String name = request.name().trim().toLowerCase(Locale.ROOT);
-    validateRole(request.permissions());
-    Document role = new Document("name", name).append("description", request.description().trim())
-        .append("permissions", request.permissions().stream().distinct().sorted().toList())
+    String name = Validator.roleName(request.name());
+    Role validatedRole = new Role();
+    validatedRole.setName(name);
+    validatedRole.setDescription(Validator.roleDescription(request.description()));
+    validatedRole.setPermissions(request.permissions());
+    validatedRole.setUpdatedAt(Instant.now());
+    validatedRole.validate();
+    Document role = new Document("name", validatedRole.getName()).append("description", validatedRole.getDescription())
+        .append("permissions", validatedRole.getPermissions().stream().sorted().toList())
         .append("isSystem", false).append("updatedAt", Date.from(Instant.now()));
     mongoTemplate.insert(role, "roles");
     writeAudit(actor, "role.update", "role", role.getObjectId("_id"), new Document("created", true)
@@ -66,12 +64,17 @@ public class AccessAdministrationController {
   @PutMapping("/roles/{name}")
   public Document updateRole(@PathVariable String name, @RequestBody RoleRequest request, Authentication actor) {
     require(actor, "role:manage");
-    validateRole(request.permissions());
+    Role validatedRole = new Role();
+    validatedRole.setName(Validator.roleName(name));
+    validatedRole.setDescription(Validator.roleDescription(request.description()));
+    validatedRole.setPermissions(request.permissions());
+    validatedRole.setUpdatedAt(Instant.now());
+    validatedRole.validate();
     Query query = Query.query(Criteria.where("name").is(name));
     Document current = mongoTemplate.findOne(query, Document.class, "roles");
     if (current == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Role not found");
-    current.put("description", request.description().trim());
-    current.put("permissions", request.permissions().stream().distinct().sorted().toList());
+    current.put("description", validatedRole.getDescription());
+    current.put("permissions", validatedRole.getPermissions().stream().sorted().toList());
     current.put("updatedAt", Date.from(Instant.now()));
     mongoTemplate.save(current, "roles");
     writeAudit(actor, "role.update", "role", current.getObjectId("_id"),
@@ -102,12 +105,10 @@ public class AccessAdministrationController {
   @PostMapping("/users")
   public Document createUser(@RequestBody UserRequest request, Authentication actor) {
     require(actor, "user:manage");
-    if (!USERNAME.matcher(request.username()).matches() || request.password().length() < 12
-        || request.password().length() > 128 || request.password().toLowerCase(Locale.ROOT).contains(request.username().toLowerCase(Locale.ROOT))) {
-      throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "Invalid username or password");
-    }
+    String validatedUsername = Validator.username(request.username());
+    Validator.newPassword(request.password(), validatedUsername);
     validateRoles(request.roles());
-    String username = request.username().trim();
+    String username = validatedUsername;
     Document user = new Document("username", username).append("usernameLower", username.toLowerCase(Locale.ROOT))
         .append("passwordHash", passwordEncoder.encode(request.password())).append("roles", request.roles().stream().distinct().sorted().toList())
         .append("isActive", true).append("createdAt", Date.from(Instant.now())).append("updatedAt", Date.from(Instant.now())).append("lastLoginAt", null);
@@ -154,15 +155,10 @@ public class AccessAdministrationController {
     mongoTemplate.save(user, "users");
   }
 
-  private void validateRole(List<String> permissions) {
-    if (permissions == null || permissions.isEmpty() || !PERMISSIONS.containsAll(permissions)) throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "Invalid permissions");
-    if (permissions.stream().anyMatch(p -> Set.of("member:create", "member:update", "member:delete").contains(p)) && !permissions.contains("member:view")) throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "Member write permissions require member:view");
-  }
-
   private void validateRoles(List<String> roles) {
-    if (roles == null || roles.isEmpty() || roles.size() > 10 || roles.stream().distinct().count() != roles.size()) throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "User must have 1 to 10 unique roles");
-    long count = mongoTemplate.count(Query.query(Criteria.where("name").in(roles)), "roles");
-    if (count != roles.size()) throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "One or more roles do not exist");
+    List<String> validatedRoles = Validator.roles(roles);
+    long count = mongoTemplate.count(Query.query(Criteria.where("name").in(validatedRoles)), "roles");
+    if (count != validatedRoles.size()) throw new com.kitchensink.validation.ValidationException("roles", "contains unknown role names");
   }
 
   private void require(Authentication actor, String permission) {

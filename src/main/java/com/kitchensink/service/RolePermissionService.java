@@ -24,7 +24,6 @@ public class RolePermissionService {
     Set<String> permissions = new LinkedHashSet<>();
     if (roleNames == null || roleNames.isEmpty()) return permissions;
     Query query = Query.query(Criteria.where("name").in(roleNames));
-    query.fields().include("permissions");
     for (Role role : mongoTemplate.find(query, Role.class)) {
       role.validate();
       permissions.addAll(role.getPermissions());

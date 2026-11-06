@@ -11,7 +11,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
-import org.springframework.security.config.Customizer;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -119,48 +120,55 @@ public class SecurityConfiguration {
   @Bean
   @Order(1)
   SecurityFilterChain apiSecurityFilterChain(
-      HttpSecurity http, JwtAuthenticationConverter jwtAuthenticationConverter) throws Exception {
+      HttpSecurity http, JwtAuthenticationConverter jwtAuthenticationConverter,
+      MongoUserDetailsService userDetailsService) throws Exception {
     return http
-        .securityMatcher("/rest/**", "/actuator/**")
+        .securityMatcher(request -> {
+          String path = request.getRequestURI().substring(request.getContextPath().length());
+          return path.startsWith("/api/v1/") || path.startsWith("/actuator/");
+        })
         .csrf(csrf -> csrf.disable())
+        .userDetailsService(userDetailsService)
+        .exceptionHandling(exceptions -> exceptions.authenticationEntryPoint(
+            new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
         .sessionManagement(
             session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .authorizeHttpRequests(
             authorize ->
                 authorize
-                    .requestMatchers(HttpMethod.GET, "/rest/members", "/rest/members/**")
+                    .requestMatchers(HttpMethod.GET, "/api/v1/members", "/api/v1/members/**")
                     .hasAuthority("member:view")
-                    .requestMatchers(HttpMethod.GET, "/rest/me")
+                    .requestMatchers(HttpMethod.GET, "/api/v1/me")
                     .authenticated()
-                    .requestMatchers(HttpMethod.POST, "/rest/members")
+                    .requestMatchers(HttpMethod.POST, "/api/v1/members")
                     .hasAuthority("member:create")
-                    .requestMatchers(HttpMethod.POST, "/rest/members/bulk")
-                    .hasAuthority("member:create")
-                    .requestMatchers(HttpMethod.PATCH, "/rest/members/**")
+                    .requestMatchers(HttpMethod.PATCH, "/api/v1/members/**")
                     .hasAuthority("member:update")
-                    .requestMatchers(HttpMethod.DELETE, "/rest/members/**")
+                    .requestMatchers(HttpMethod.DELETE, "/api/v1/members/**")
                     .hasAuthority("member:delete")
-                    .requestMatchers(HttpMethod.POST, "/rest/members/*/restore")
+                    .requestMatchers(HttpMethod.POST, "/api/v1/members/*/restore")
                     .hasAuthority("member:delete")
-                    .requestMatchers(HttpMethod.GET, "/rest/users/**")
+                    .requestMatchers(HttpMethod.GET, "/api/v1/users/**")
                     .hasAuthority("user:manage")
-                    .requestMatchers(HttpMethod.POST, "/rest/users/**")
+                    .requestMatchers(HttpMethod.POST, "/api/v1/users/**")
                     .hasAuthority("user:manage")
-                    .requestMatchers(HttpMethod.PUT, "/rest/users/**")
+                    .requestMatchers(HttpMethod.PUT, "/api/v1/users/**")
                     .hasAuthority("user:manage")
-                    .requestMatchers(HttpMethod.GET, "/rest/roles/**")
+                    .requestMatchers(HttpMethod.GET, "/api/v1/roles/**")
                     .hasAuthority("role:manage")
-                    .requestMatchers(HttpMethod.POST, "/rest/roles/**")
+                    .requestMatchers(HttpMethod.POST, "/api/v1/roles/**")
                     .hasAuthority("role:manage")
-                    .requestMatchers(HttpMethod.PUT, "/rest/roles/**")
+                    .requestMatchers(HttpMethod.PUT, "/api/v1/roles/**")
                     .hasAuthority("role:manage")
-                    .requestMatchers(HttpMethod.DELETE, "/rest/roles/**")
+                    .requestMatchers(HttpMethod.DELETE, "/api/v1/roles/**")
                     .hasAuthority("role:manage")
-                    .requestMatchers("/rest/**")
+                    .requestMatchers("/api/v1/**")
                     .denyAll()
                     .anyRequest()
                     .authenticated())
-        .httpBasic(Customizer.withDefaults())
+        .httpBasic(basic -> basic.authenticationEntryPoint(
+            new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
+        .formLogin(form -> form.disable())
         .oauth2ResourceServer(resourceServer -> resourceServer.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)))
         .build();
   }

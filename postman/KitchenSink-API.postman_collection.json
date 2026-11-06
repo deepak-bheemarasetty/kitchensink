@@ -1,0 +1,223 @@
+{
+  "info": {
+    "name": "KitchenSink Member Management API",
+    "description": "API collection for local testing. Set baseUrl, credentials, and IDs in collection variables. Collection Authorization uses Basic Auth by default; for Auth0, change collection Authorization to Bearer Token and provide an API access token. Member create requires an Idempotency-Key. User and role administration requires the matching manage permission.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "basic",
+    "basic": [
+      { "key": "username", "value": "{{username}}", "type": "string" },
+      { "key": "password", "value": "{{password}}", "type": "string" }
+    ]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:9080/kitchensink", "type": "string" },
+    { "key": "search", "value": "Ada", "type": "string" },
+    { "key": "username", "value": "kitchensink.admin@mail.com", "type": "string" },
+    { "key": "password", "value": "", "type": "string" },
+    { "key": "memberObjectId", "value": "", "type": "string" },
+    { "key": "memberBusinessId", "value": "", "type": "string" },
+    { "key": "memberEmail", "value": "", "type": "string" },
+    { "key": "memberCursor", "value": "", "type": "string" },
+    { "key": "roleName", "value": "viewer", "type": "string" },
+    { "key": "userObjectId", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Members",
+      "item": [
+        {
+          "name": "List and search members",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/members?q={{search}}&status=active&sort=name&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "members"],
+              "query": [
+                { "key": "q", "value": "{{search}}" },
+                { "key": "status", "value": "active" },
+                { "key": "sort", "value": "name" },
+                { "key": "limit", "value": "20" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Continue member search page",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/members?sort=name&limit=20&cursor={{memberCursor}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "members"],
+              "query": [
+                { "key": "sort", "value": "name" },
+                { "key": "limit", "value": "20" },
+                { "key": "cursor", "value": "{{memberCursor}}" }
+              ]
+            },
+            "description": "Copy page.nextCursor from the previous response into memberCursor."
+          }
+        },
+        {
+          "name": "Get member by ObjectId",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/members/{{memberObjectId}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "members", "{{memberObjectId}}"] }
+          }
+        },
+        {
+          "name": "Get member by member ID",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/members/by-member-id/{{memberBusinessId}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "members", "by-member-id", "{{memberBusinessId}}"] }
+          }
+        },
+        {
+          "name": "Get active member by email",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/members/by-email/{{memberEmail}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "members", "by-email", "{{memberEmail}}"] }
+          }
+        },
+        {
+          "name": "Create member",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"firstName\": \"Ada\",\n  \"lastName\": \"Lovelace\",\n  \"email\": \"ada.lovelace{{$timestamp}}@example.com\",\n  \"phone\": \"+14155552671\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/api/v1/members", "host": ["{{baseUrl}}"], "path": ["api", "v1", "members"] }
+          },
+          "description": "Requires member:create and an Idempotency-Key header. Response includes the generated member ObjectId and memberId."
+        },
+        {
+          "name": "Update member",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Accept", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"version\": 1,\n  \"firstName\": \"Ada Augusta\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/api/v1/members/{{memberObjectId}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "members", "{{memberObjectId}}"] }
+          },
+          "description": "Requires member:update. Set version to the current record version; successful updates increment it."
+        },
+        {
+          "name": "Soft-delete member",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/v1/members/{{memberObjectId}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "members", "{{memberObjectId}}"] }
+          },
+          "description": "Requires member:delete. Returns 204 on success."
+        },
+        {
+          "name": "Restore member",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/v1/members/{{memberObjectId}}/restore", "host": ["{{baseUrl}}"], "path": ["api", "v1", "members", "{{memberObjectId}}", "restore"] }
+          },
+          "description": "Requires member:delete."
+        }
+      ]
+    },
+    {
+      "name": "Current user",
+      "item": [
+        {
+          "name": "Get current user and permissions",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/me", "host": ["{{baseUrl}}"], "path": ["api", "v1", "me"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Roles",
+      "item": [
+        {
+          "name": "List roles",
+          "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }], "url": { "raw": "{{baseUrl}}/api/v1/roles", "host": ["{{baseUrl}}"], "path": ["api", "v1", "roles"] } },
+          "description": "Requires role:manage."
+        },
+        {
+          "name": "Create role",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Accept", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"support-agent\",\n  \"description\": \"Support team member\",\n  \"permissions\": [\"member:view\"]\n}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/api/v1/roles", "host": ["{{baseUrl}}"], "path": ["api", "v1", "roles"] }
+          },
+          "description": "Requires role:manage. Supported permissions: member:view, member:create, member:update, member:delete, user:manage, role:manage. Member write permissions require member:view."
+        },
+        {
+          "name": "Update role",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Accept", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"{{roleName}}\",\n  \"description\": \"Updated role description\",\n  \"permissions\": [\"member:view\"]\n}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/api/v1/roles/{{roleName}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "roles", "{{roleName}}"] }
+          },
+          "description": "Requires role:manage."
+        },
+        {
+          "name": "Delete role",
+          "request": { "method": "DELETE", "header": [], "url": { "raw": "{{baseUrl}}/api/v1/roles/{{roleName}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "roles", "{{roleName}}"] } },
+          "description": "Requires role:manage. System roles and roles assigned to users cannot be deleted."
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "List users",
+          "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }], "url": { "raw": "{{baseUrl}}/api/v1/users", "host": ["{{baseUrl}}"], "path": ["api", "v1", "users"] } },
+          "description": "Requires user:manage. Password hashes are excluded from the response."
+        },
+        {
+          "name": "Create user",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Accept", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"new.user@example.com\",\n  \"password\": \"ReplaceWithAStrongPassword123!\",\n  \"roles\": [\"viewer\"]\n}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/api/v1/users", "host": ["{{baseUrl}}"], "path": ["api", "v1", "users"] }
+          },
+          "description": "Requires user:manage. Password must be 12 to 128 characters and must not contain the username. Roles must already exist."
+        },
+        {
+          "name": "Assign user roles",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Accept", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"roles\": [\"viewer\"]\n}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/api/v1/users/{{userObjectId}}/roles", "host": ["{{baseUrl}}"], "path": ["api", "v1", "users", "{{userObjectId}}", "roles"] }
+          },
+          "description": "Requires user:manage. Self-role changes and removal of the last active admin are blocked."
+        },
+        {
+          "name": "Set user active status",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Accept", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"isActive\": false\n}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/api/v1/users/{{userObjectId}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "users", "{{userObjectId}}"] }
+          },
+          "description": "Requires user:manage. You cannot deactivate yourself or the last active admin."
+        }
+      ]
+    }
+  ]
+}
