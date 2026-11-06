@@ -10,6 +10,14 @@
     <main class="container small login-container">
       <h1>Kitchen Sink Members</h1>
       <p>Sign in securely to manage and find members.</p>
+      <form th:action="@{/login}" method="post">
+        <label for="username">Username</label>
+        <input id="username" name="username" type="text" autocomplete="username" required />
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required />
+        <button class="primary" type="submit">Sign in</button>
+      </form>
+      <p>Or</p>
       <a class="primary" th:href="@{/oauth2/authorization/auth0}">Continue with Auth0</a>
     </main>
   </body>

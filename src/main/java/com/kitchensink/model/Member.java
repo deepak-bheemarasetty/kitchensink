@@ -19,7 +19,6 @@ public class Member implements Serializable {
   private String email;
   private String emailLower;
   private String phone;
-  private String country;
   private String status;
   private Instant createdAt;
   private ObjectId createdBy;
@@ -32,6 +31,7 @@ public class Member implements Serializable {
   private Member() {}
 
   public static Member create() { return new Member(); }
+  public String getFullName() { return (firstName + " " + (lastName == null ? "" : lastName)).trim(); }
   public ObjectId getId() { return id; }
   public void setId(ObjectId id) { this.id = id; }
   public String getMemberId() { return memberId; }
@@ -48,8 +48,6 @@ public class Member implements Serializable {
   public void setEmailLower(String emailLower) { this.emailLower = emailLower; }
   public String getPhone() { return phone; }
   public void setPhone(String phone) { this.phone = phone; }
-  public String getCountry() { return country; }
-  public void setCountry(String country) { this.country = country; }
   public String getStatus() { return status; }
   public void setStatus(String status) { this.status = status; }
   public Instant getCreatedAt() { return createdAt; }

@@ -8,4 +8,6 @@ import org.springframework.data.mongodb.repository.MongoRepository;
 /** Persistence operations for members. */
 public interface MemberRepository extends MongoRepository<Member, ObjectId> {
   Optional<Member> findByEmail(String email);
+
+  Optional<Member> findByEmailLowerAndDeletedAtIsNull(String emailLower);
 }

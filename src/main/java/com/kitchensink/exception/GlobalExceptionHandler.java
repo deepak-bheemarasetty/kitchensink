@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  * Converts application and persistence exceptions into consistent HTTP responses.
@@ -16,6 +17,23 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+  /** Returns validation failures using the documented 422 response status. */
+  @ExceptionHandler(ResponseStatusException.class)
+  public ResponseEntity<Map<String, String>> handleRequestStatus(ResponseStatusException exception) {
+    if (exception.getStatusCode().value() == HttpStatus.UNPROCESSABLE_ENTITY.value()) {
+      return ResponseEntity.unprocessableEntity()
+          .body(Map.of("error", exception.getReason() == null ? "Validation failed" : exception.getReason()));
+    }
+    return ResponseEntity.status(exception.getStatusCode())
+        .body(Map.of("error", exception.getReason() == null ? "Request failed" : exception.getReason()));
+  }
+
+  @ExceptionHandler(IllegalArgumentException.class)
+  public ResponseEntity<Map<String, String>> handleValidation(IllegalArgumentException exception) {
+    return ResponseEntity.unprocessableEntity()
+        .body(Map.of("error", exception.getMessage() == null ? "Validation failed" : exception.getMessage()));
+  }
+
   /** Returns a conflict response when an email is already registered. */
   @ExceptionHandler(DuplicateEmailException.class)
   public ResponseEntity<Map<String, String>> handleDuplicateEmail(
