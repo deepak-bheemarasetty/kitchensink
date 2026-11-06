@@ -2,4 +2,5 @@ target/
 .vscode/
 .env
 CHECKPOINT.md
+test-user-credentials.txt
 !.env.example

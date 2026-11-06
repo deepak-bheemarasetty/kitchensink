@@ -11,6 +11,9 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 /** Applies member normalization and persists directory records. */
 @Service
@@ -26,6 +29,7 @@ public class MemberService {
   }
 
   public Member register(Member member) {
+    requirePermission("member:create");
     member.setFirstName(normalizeName(member.getFirstName(), true));
     member.setLastName(normalizeName(member.getLastName(), false));
     if (member.getLastName() == null) member.setLastName("");
@@ -86,6 +90,7 @@ public class MemberService {
 
   /** Finds a member by email, reporting inactive records distinctly from missing records. */
   public Member findByEmail(String email) {
+    requirePermission("member:view");
     Member member =
         memberRepository
             .findByEmailLowerAndDeletedAtIsNull(email.trim().toLowerCase(Locale.ROOT))
@@ -95,5 +100,15 @@ public class MemberService {
       throw new ResponseStatusException(HttpStatus.GONE, "Member is no longer active");
     }
     return member;
+  }
+
+  private void requirePermission(String permission) {
+    Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+    if (authentication == null
+        || !authentication.isAuthenticated()
+        || authentication.getAuthorities().stream()
+            .noneMatch(authority -> authority.getAuthority().equals(permission))) {
+      throw new AccessDeniedException("You do not have permission");
+    }
   }
 }

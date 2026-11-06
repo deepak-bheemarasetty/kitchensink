@@ -38,6 +38,30 @@ mongosh --version
 
 ## Run locally
 
+Local execution uses the Spring `local` profile by default. Local-only seed data is disabled unless explicitly enabled. After applying V1 and V2, seed the six RBAC test users and default roles with `mongosh`:
+
+```powershell
+mongosh "mongodb://localhost:27017/kitchensink" scripts/seed-rbac-local.js
+```
+
+The script refuses to run against a database not named `kitchensink`. It stores BCrypt hashes and only creates users that are not already present. The generated plaintext test credentials are kept in the ignored root file `test-user-credentials.txt`.
+
+To use the application startup seeder instead, run the local profile with seeding explicitly enabled:
+
+```powershell
+$env:LOCAL_SEED_ENABLED = 'true'
+mvn spring-boot:run -Dspring-boot.run.profiles=local
+Remove-Item Env:LOCAL_SEED_ENABLED
+```
+
+On macOS/Linux:
+
+```shell
+LOCAL_SEED_ENABLED=true mvn spring-boot:run -Dspring-boot.run.profiles=local
+```
+
+The local seed reads usernames and plaintext test passwords from the ignored root file `test-user-credentials.txt`; passwords must be BCrypt-hashed before they are written to MongoDB. Do not use this seed outside the local profile. The same usernames and passwords are listed in the ignored `CHECKPOINT.md` for creating the matching Auth0 test identities.
+
 Start the MongoDB service if it is not already running. On Windows PowerShell:
 
 ```powershell
@@ -62,7 +86,7 @@ Copy-Item .env.example .env
 
 In macOS/Linux, use `cp .env.example .env`. Spring Boot loads the root `.env` when started from the project root. The file is ignored by Git; never commit secrets. Environment variables supplied by the shell or deployment environment take precedence over `.env`.
 
-Authentication uses Auth0 OpenID Connect for browser sign-in and signed JWT bearer tokens for the REST API. Create a Regular Web Application and an API in Auth0, then configure the following application URLs:
+Authentication supports local username/password and Auth0 OpenID Connect for browser sign-in. REST requests accept HTTP Basic credentials from the local users collection or Auth0 JWT bearer tokens. Permissions come from the application's users and roles collections; Auth0 scopes do not grant application permissions. Create a Regular Web Application and an API in Auth0, then configure the following application URLs:
 
 - Allowed Callback URL: `http://localhost:9080/kitchensink/login/oauth2/code/auth0`
 - Allowed Logout URL: `http://localhost:9080/kitchensink/`
