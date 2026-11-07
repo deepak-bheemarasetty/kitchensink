@@ -95,7 +95,8 @@ db.runCommand({
       }
     }
   },
-  validationLevel: "strict",
+  // Keep inserts and valid-document updates checked while allowing legacy invalid rows to be repaired or soft-deleted.
+  validationLevel: "moderate",
   validationAction: "error"
 });
 

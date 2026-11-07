@@ -5,8 +5,9 @@ import java.io.Serializable;
 import java.time.Instant;
 import org.bson.types.ObjectId;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.annotation.Version;
 import org.springframework.data.mongodb.core.mapping.Document;
+import tools.jackson.databind.annotation.JsonSerialize;
+import tools.jackson.databind.ser.std.ToStringSerializer;
 
 /** Member directory record. */
 @SuppressWarnings("serial")
@@ -25,7 +26,7 @@ public class Member implements Serializable {
   private ObjectId createdBy;
   private Instant updatedAt;
   private ObjectId updatedBy;
-  @Version private Integer version;
+  private Integer version;
   private Instant deletedAt;
   private ObjectId deletedBy;
 
@@ -39,6 +40,7 @@ public class Member implements Serializable {
     return (firstName + " " + (lastName == null ? "" : lastName)).trim();
   }
 
+  @JsonSerialize(using = ToStringSerializer.class)
   public ObjectId getId() {
     return id;
   }

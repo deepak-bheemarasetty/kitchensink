@@ -2,9 +2,13 @@ package com.kitchensink.exception;
 
 import com.kitchensink.service.DuplicateEmailException;
 import com.kitchensink.validation.ValidationException;
+import com.mongodb.MongoBulkWriteException;
 import com.mongodb.MongoWriteException;
+import com.mongodb.WriteError;
 import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -21,6 +25,8 @@ import org.springframework.web.server.ResponseStatusException;
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+  private static final Logger LOGGER = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
   /** Returns validation failures using the documented 422 response status. */
   @ExceptionHandler(ResponseStatusException.class)
   public ResponseEntity<Map<String, Object>> handleRequestStatus(
@@ -107,10 +113,18 @@ public class GlobalExceptionHandler {
   @ExceptionHandler(DataIntegrityViolationException.class)
   public ResponseEntity<Map<String, Object>> handleDataIntegrityViolation(
       DataIntegrityViolationException exception) {
-    if (containsMongoSchemaViolation(exception)) {
-      return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+    MongoWriteException writeException = findMongoWriteException(exception);
+    if (writeException != null && writeException.getError().getCode() == 121) {
+      LOGGER.error(
+          "MongoDB rejected a document schema. requestId={}, code={}, details={}",
+          MDC.get("requestId"),
+          writeException.getError().getCode(),
+          writeException.getError().getDetails());
+      return ResponseEntity.badRequest()
           .body(
-              error(HttpStatus.INTERNAL_SERVER_ERROR, "A data integrity constraint was violated"));
+              error(
+                  HttpStatus.BAD_REQUEST,
+                  "A database document does not satisfy MongoDB schema constraints"));
     }
     return ResponseEntity.status(HttpStatus.CONFLICT)
         .body(error(HttpStatus.CONFLICT, "The request conflicts with existing data"));
@@ -126,15 +140,22 @@ public class GlobalExceptionHandler {
             "requestId", MDC.get("requestId") == null ? "unknown" : MDC.get("requestId")));
   }
 
-  private boolean containsMongoSchemaViolation(Throwable exception) {
+  private MongoWriteException findMongoWriteException(Throwable exception) {
     Throwable cause = exception;
     while (cause != null) {
-      if (cause instanceof MongoWriteException writeException
-          && writeException.getError().getCode() == 121) {
-        return true;
+      if (cause instanceof MongoWriteException writeException) {
+        return writeException;
+      }
+      if (cause instanceof MongoBulkWriteException bulkWriteException) {
+        for (WriteError writeError : bulkWriteException.getWriteErrors()) {
+          if (writeError.getCode() == 121) {
+            LOGGER.error(
+                "MongoDB bulk write rejected a document schema: {}", writeError.getDetails());
+          }
+        }
       }
       cause = cause.getCause();
     }
-    return false;
+    return null;
   }
 }

@@ -56,7 +56,7 @@ const schemas = {
           entityId: { bsonType: "objectId" },
           changes: { bsonType: "object" },
           requestId: { bsonType: "string", minLength: 1 },
-          ip: { bsonType: "string" }
+          ip: { bsonType: ["string", "null"] }
         }
       }
     },
