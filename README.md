@@ -1,6 +1,6 @@
 # Kitchen Sink
 
-Kitchen Sink is a Spring Boot application for managing member registrations through a browser UI and REST API. Member data is stored as MongoDB documents using Spring Data MongoDB. Browser sign-in uses Auth0 OpenID Connect; REST and operational endpoints require Auth0 JWT bearer tokens.
+Kitchen Sink is a Spring Boot application for managing members through a browser UI and REST API. Member data is stored in MongoDB. Sign-in uses Auth0 OpenID Connect; identity email is mapped to local users and roles for authorization.
 
 Project author: Deepak Bheemarasetty.
 
@@ -38,31 +38,7 @@ mongosh --version
 
 ## Run locally
 
-Local execution uses the Spring `local` profile by default. Local-only seed data is disabled unless explicitly enabled. After applying V1 and V2, seed the six RBAC test users and default roles with `mongosh`:
-
-```powershell
-mongosh "mongodb://localhost:27017/kitchensink" scripts/seed-rbac-local.js
-```
-
-The script refuses to run against a database not named `kitchensink`. It stores BCrypt hashes and only creates users that are not already present. The generated plaintext test credentials are kept in the ignored root file `test-user-credentials.txt`.
-
-To use the application startup seeder instead, run the local profile with seeding explicitly enabled:
-
-```powershell
-$env:LOCAL_SEED_ENABLED = 'true'
-mvn spring-boot:run -Dspring-boot.run.profiles=local
-Remove-Item Env:LOCAL_SEED_ENABLED
-```
-
-On macOS/Linux:
-
-```shell
-LOCAL_SEED_ENABLED=true mvn spring-boot:run -Dspring-boot.run.profiles=local
-```
-
-The local seed reads usernames and plaintext test passwords from the ignored root file `test-user-credentials.txt`; passwords must be BCrypt-hashed before they are written to MongoDB. Do not use this seed outside the local profile. The same usernames and passwords are listed in the ignored `CHECKPOINT.md` for creating the matching Auth0 test identities.
-
-Start the MongoDB service if it is not already running. On Windows PowerShell:
+Local execution uses the Spring `local` profile by default. Configure the MongoDB application service account in `.env` with `MONGODB_URI`, and configure Auth0 values as described below. For local development without MongoDB authentication, the default localhost URI remains available. Create or invite matching Auth0 users through the Auth0 tenant and assign their local roles in the Users workspace. On Windows PowerShell:
 
 ```powershell
 $service = Get-Service MongoDB
@@ -72,7 +48,7 @@ Get-Service MongoDB
 
 On macOS installed with Homebrew, use `brew services start mongodb-community@8.0`. On Linux systems using systemd, use `sudo systemctl start mongod` and check status with `sudo systemctl status mongod`.
 
-Use a fresh `kitchensink` database for this version; the member `_id` is now a numeric sequence and existing ObjectId-based member records are not migrated. The application installs MongoDB schema validation on startup. Seed 75 sample members from the project root; the script includes the required audit fields and initializes the sequence counter:
+Use a fresh `kitchensink` database for this version; the member `_id` is now a numeric sequence and existing ObjectId-based member records are not migrated. The application installs MongoDB schema validation on startup. For an unauthenticated local development database only, seed 75 sample members from the project root; the script includes required audit fields and initializes the sequence counter:
 
 ```shell
 mongosh "mongodb://localhost:27017/kitchensink" scripts/seed-members.js
@@ -86,12 +62,14 @@ Copy-Item .env.example .env
 
 In macOS/Linux, use `cp .env.example .env`. Spring Boot loads the root `.env` when started from the project root. The file is ignored by Git; never commit secrets. Environment variables supplied by the shell or deployment environment take precedence over `.env`.
 
-Authentication supports local username/password and Auth0 OpenID Connect for browser sign-in. REST requests accept HTTP Basic credentials from the local users collection or Auth0 JWT bearer tokens. Permissions come from the application's users and roles collections; Auth0 scopes do not grant application permissions. Create a Regular Web Application and an API in Auth0, then configure the following application URLs:
+Set `LOG_LEVEL` in `.env` to control the root application logging level (`TRACE`, `DEBUG`, `INFO`, `WARN`, or `ERROR`). It defaults to `INFO` when omitted.
+
+Authentication uses Auth0 OpenID Connect for browser sign-in. The Auth0 email identity is matched to an active account in the application's users collection, and effective permissions are loaded from that account's assigned roles. The same database-backed permissions protect the UI and API. User administration registers an Auth0 email identity in the local users collection; administrators must also invite that email through Auth0. Create a Regular Web Application and an API in Auth0, then configure the following application URLs:
 
 - Allowed Callback URL: `http://localhost:9080/kitchensink/login/oauth2/code/auth0`
 - Allowed Logout URL: `http://localhost:9080/kitchensink/`
 - Set the Auth0 tenant's Default Audience to the API identifier.
-- Create API permissions `read:members` and `write:members`, enable RBAC and adding permissions to access tokens, and request the matching permission as an OAuth scope. Member list/detail requests require `read:members`; registration requires `write:members`.
+- Configure the Auth0 API audience and ensure the email claim is available to the application. Application permissions are loaded from local role assignments, not from Auth0 scopes.
 
 Set these values in the root `.env` using your Auth0 Regular Web Application credentials and API identifier:
 
@@ -108,7 +86,7 @@ Then start the application from the project root:
 mvn spring-boot:run
 ```
 
-The issuer URL must end in `/`. The application has no local username or password; without the Auth0 settings it will fail to start.
+The issuer URL must end in `/`. The application uses Auth0 only; without the Auth0 settings it will fail to start.
 
 The browser session expires after 30 minutes without requests. When an expired session next accesses a protected page, the user must start the Auth0 sign-in flow again, which requests reauthentication. REST API authentication remains stateless and is unaffected by this browser-session timeout.
 
@@ -127,19 +105,19 @@ java -jar target/kitchensink.jar --server.port=9081
 
 ## Browser UI
 
-The browser UI is available under the `/kitchensink` context path and has two main pages:
+The browser UI is available under the `/kitchensink` context path. OAuth sign-in uses Auth0, then maps the identity email to an active local account and its database roles. Members, Users, and Roles navigation and controls are rendered only when the corresponding permission is present.
 
-- `/kitchensink/` shows the Find and Add panes, exact-email search, and the registration form.
-- `/kitchensink/members` shows a searchable member list ordered by email. Its filter matches email addresses that start with the entered prefix and requires at least four characters. It loads at most 20 records per MongoDB request, plus one lookahead record to determine whether another page exists. Next/Previous use the exclusive email cursor; there is no offset skip, full count query, or numbered page list.
-- Member rows show email, name, country code, and phone number in that order.
+- `/kitchensink/` redirects to the first permitted workspace.
+- `/kitchensink/members` shows a searchable member directory with status filtering, keyset Load more pagination, and responsive mobile cards. Permission-gated add, edit, and delete actions use the existing `/api/v1/members` API.
+- `/kitchensink/users` manages local account role assignments and active status. `/kitchensink/roles` reviews and updates role permissions.
 
-The All Members page supports case-insensitive email-prefix filtering and offers a clear-search link to restore the full paginated list. An unsuccessful filter displays a dismissible warning. The registration form submits fields without client-side validation; MongoDB enforces the persisted schema. Browser sign-in redirects to Auth0 and returns to the application; the app does not store user passwords.
+Member add and edit share a responsive drawer. The UI displays loading, empty, success, and error states; server validation and authorization remain authoritative.
 
 ## Member API
 
 Member endpoints use `/api/v1/members` and exchange JSON. List responses use keyset cursors and limits capped at 100. Create requests require an `Idempotency-Key` header. Member IDs are MongoDB ObjectIds. Bulk/file import is outside this API's scope.
 
-For interactive API testing, import [`postman/KitchenSink-API.postman_collection.json`](postman/KitchenSink-API.postman_collection.json) into Postman. Its default `baseUrl` matches the local server (`http://localhost:9080/kitchensink`). Set the collection's `username` and `password` variables for Basic Auth, or switch collection Authorization to Bearer Token and provide an Auth0 access token. Copy returned member and user IDs into the corresponding collection variables before calling ID-based routes.
+For interactive API testing, import [`postman/KitchenSink-API.postman_collection.json`](postman/KitchenSink-API.postman_collection.json) into Postman. Its default `baseUrl` matches the local server (`http://localhost:9080/kitchensink`). Use an Auth0 access token as a Bearer token. Copy returned member and user IDs into the corresponding collection variables before calling ID-based routes.
 
 The following examples use a valid Auth0 access token for the configured API audience. Replace `REPLACE_WITH_ACCESS_TOKEN` with that token. On Windows PowerShell, use `curl.exe` in place of `curl` (PowerShell may define `curl` as an alias).
 
@@ -186,7 +164,7 @@ A successful registration returns `201 Created`, the saved member as JSON, and a
 - `createdBy` and `lastUpdatedBy` come from the authenticated username; creation and update timestamps and the version are managed by Spring Data MongoDB.
 - Email is trimmed and lowercased before storage, and a unique index enforces uniqueness. Other field constraints are enforced by MongoDB schema validation, not application Bean Validation.
 
-The REST API and Actuator endpoints accept stateless JWT bearer tokens issued by the configured Auth0 tenant. The issuer and API audience are validated; missing or invalid tokens receive `401 Unauthorized`. REST member reads require the `read:members` scope and registration requires `write:members`; requests without the required permission are forbidden. CSRF protection is disabled for these stateless requests; the browser UI uses an OIDC login session and CSRF tokens for state-changing form submissions.
+REST endpoints accept Auth0 JWT bearer tokens; browser UI requests use the OAuth login session with CSRF protection for state-changing calls. Both authentication paths resolve application permissions from the local users and roles collections. The API enforces permissions for every operation; UI visibility is a usability layer only.
 
 ## Operational metrics
 
@@ -202,7 +180,7 @@ curl --header 'Authorization: Bearer REPLACE_WITH_ACCESS_TOKEN' 'http://localhos
 curl --header 'Authorization: Bearer REPLACE_WITH_ACCESS_TOKEN' 'http://localhost:9080/kitchensink/actuator/metrics/mongodb.driver.pool.checkoutfailed'
 ```
 
-`mongodb.driver.commands` reports command frequency (`COUNT`) and database command time (`TOTAL_TIME` and `MAX`) over the application process lifetime. The application does not currently use MongoDB transactions, so there is no transaction-duration metric; command durations are available now, and transaction timing is deferred until transactional operations are introduced. Metrics remain in-process and are available through Actuator; no external dashboard or exporter is planned.
+`mongodb.driver.commands` reports command frequency (`COUNT`) and database command time (`TOTAL_TIME` and `MAX`) over the application process lifetime. Member write workflows use MongoDB transactions for atomicity; transaction-duration metrics are not currently exposed. Local MongoDB must run as a replica set for these workflows. Metrics remain in-process and are available through Actuator; no external dashboard or exporter is planned.
 
 ## Code style
 
@@ -225,3 +203,24 @@ The suite covers application startup, authentication, controller responses, regi
 ## Configuration
 
 Application settings are in `src/main/resources/application.properties`. The MongoDB URI is read from `MONGODB_URI`, with a local MongoDB default. Spring Data creates the unique email index, and startup configures the member collection's schema validator.
+
+The MongoDB converter omits Spring Data's `_class` type metadata so documents remain compatible with the strict collection schemas. Repository and template reads specify their target Java model explicitly.
+
+### Java formatting and Checkstyle
+
+Spotless and the recommended VS Code Google Java Format extension use Google Java Format 1.24.0 as the formatting source of truth. Java files format on save; to format every application and test Java source at once, run `mvn spotless:apply` or choose **Format all Java files (Spotless)** from **Terminal → Run Task** in VS Code. Run `mvn spotless:check` or choose **Check Java formatting (Spotless)** to check formatting without changing files. Maven and VS Code download the formatter the first time they run.
+
+Checkstyle separately checks `config/checkstyle/google_checks.xml` for code-rule violations, such as naming and Javadocs. Formatting is checked by Spotless; Checkstyle's brace requirement is omitted because Google Java Format does not change control flow, and long `Pattern.compile` literals are excluded from its line-length check. Run `mvn validate` or choose **Check Java style (Checkstyle)** from **Terminal → Run Task**. **Generate Checkstyle report** writes its report under `target/site`.
+
+### MongoDB database roles
+
+The application uses Auth0 for sign-in. MongoDB users below are separate database identities; they do not grant application UI permissions. For self-managed MongoDB, connect with an existing deployment administrator, set `MONGODB_APP_DB` if the database is not `kitchensink`, and run `scripts/setup-mongodb-roles.js`. MongoDB passwords and their corresponding Auth0 email identifiers are stored in the ignored `mongo-database-credentials.txt` document. These database passwords are not for Auth0 sign-in; create/invite those emails in Auth0 and let Auth0 manage authentication. The current app-role mapping is admin=`admin`, editor=`manager` (full member CRUD), viewer=`viewer`, and database admin=`admin`. Protect the credentials document and distribute it only over a secure channel. For MongoDB Atlas, create equivalent custom roles and users in Atlas because Atlas does not support the `createRole` shell command. Set `MONGODB_URI` to the `kitchensink_app` connection string in `.env` so the application connects with its own service identity. Store that credential in ignored `.env` or a deployment secret store, never in source control. Do not give the app credential to human users.
+
+| MongoDB role | Access | Intended user |
+| --- | --- | --- |
+| `kitchensinkApp` | Read/write data, create/drop collections and indexes, modify validators, and bypass document validation | Application service account only |
+| `kitchensinkAdmin` | Read/write data, manage collections/indexes/validators, and manage users/roles in the application database | Database administrator |
+| `kitchensinkEditor` | Read, insert, update, and remove application documents | Data editor |
+| `kitchensinkViewer` | Read application data only | Debugging |
+
+Editors and viewers receive no collection administration, user/role administration, or `bypassDocumentValidation` privileges. MongoDB privileges are database/collection action based: standard MongoDB RBAC cannot let an editor change document values while preventing changes to selected fields or document structure. The JSON Schema validators reject invalid document shapes, but an editor with `update` can still make any update that passes validation. Use the application API for field-level rules and auditing; give direct editor access only to trusted operators. The app account has the broadest routine application permissions because it performs migrations, auditing, and CRUD. The separate human admin manages database users and roles and can modify schemas. For strongest separation, keep the deployment administrator account offline except during administration. MongoDB authorization is currently disabled on the local server, so these accounts are not enforced until authorization is enabled and the server is restarted.

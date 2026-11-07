@@ -4,13 +4,12 @@ const schemas = {
     validator: {
       $jsonSchema: {
         bsonType: "object",
-        required: ["username", "usernameLower", "passwordHash", "roles", "isActive", "createdAt", "updatedAt"],
+        required: ["username", "usernameLower", "roles", "isActive", "createdAt", "updatedAt"],
         additionalProperties: false,
         properties: {
           _id: { bsonType: "objectId" },
           username: { bsonType: "string", minLength: 3, maxLength: 254, pattern: "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$" },
           usernameLower: { bsonType: "string", minLength: 3, maxLength: 254, pattern: "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$" },
-          passwordHash: { bsonType: "string", minLength: 1 },
           roles: { bsonType: "array", minItems: 1, maxItems: 10, uniqueItems: true, items: { bsonType: "string" } },
           isActive: { bsonType: "bool" },
           createdAt: { bsonType: "date" },

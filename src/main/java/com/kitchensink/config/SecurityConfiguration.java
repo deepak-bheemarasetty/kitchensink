@@ -1,10 +1,9 @@
 package com.kitchensink.config;
 
-import java.util.Map;
+import com.kitchensink.service.RolePermissionService;
 import java.util.Collection;
 import java.util.List;
-import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.context.annotation.Bean;
@@ -12,10 +11,12 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
-import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.authority.mapping.GrantedAuthoritiesMapper;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
@@ -23,12 +24,12 @@ import org.springframework.security.oauth2.client.web.DefaultOAuth2Authorization
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
+import org.springframework.security.oauth2.core.oidc.user.OidcUserAuthority;
+import org.springframework.security.oauth2.core.user.OAuth2UserAuthority;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.core.authority.mapping.GrantedAuthoritiesMapper;
-import org.springframework.security.oauth2.core.user.OAuth2UserAuthority;
-import org.springframework.security.oauth2.core.oidc.user.OidcUserAuthority;
-import com.kitchensink.service.RolePermissionService;
+import org.springframework.security.web.authentication.HttpStatusEntryPoint;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 
 /** Configures OIDC browser login and stateless JWT authentication for the API. */
 @Configuration
@@ -36,23 +37,23 @@ import com.kitchensink.service.RolePermissionService;
 @EnableWebSecurity
 public class SecurityConfiguration {
   @Bean
-  org.springframework.security.crypto.password.PasswordEncoder passwordEncoder() {
-    return new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder();
-  }
-
-  @Bean
   JwtAuthenticationConverter jwtAuthenticationConverter(RolePermissionService permissions) {
     JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
-    converter.setJwtGrantedAuthoritiesConverter(jwt -> {
-      String username = jwt.getClaimAsString("email");
-      if (username == null) username = jwt.getSubject();
-      RolePermissionService.UserPermissions user = permissions.user(username);
-      Collection<GrantedAuthority> granted = user.active()
-          ? user.permissions().stream()
-              .<GrantedAuthority>map(SimpleGrantedAuthority::new).toList()
-          : List.of();
-      return granted;
-    });
+    converter.setJwtGrantedAuthoritiesConverter(
+        jwt -> {
+          String username = jwt.getClaimAsString("email");
+          if (username == null) {
+            username = jwt.getSubject();
+          }
+          RolePermissionService.UserPermissions user = permissions.user(username);
+          Collection<GrantedAuthority> granted =
+              user.active()
+                  ? user.permissions().stream()
+                      .<GrantedAuthority>map(SimpleGrantedAuthority::new)
+                      .toList()
+                  : List.of();
+          return granted;
+        });
     return converter;
   }
 
@@ -65,12 +66,15 @@ public class SecurityConfiguration {
         mapped.add(authority);
         String email = null;
         if (authority instanceof OidcUserAuthority oidcAuthority) {
-          email = oidcAuthority.getUserInfo() == null
-              ? oidcAuthority.getIdToken().getClaimAsString("email")
-              : oidcAuthority.getUserInfo().getEmail();
+          email =
+              oidcAuthority.getUserInfo() == null
+                  ? oidcAuthority.getIdToken().getClaimAsString("email")
+                  : oidcAuthority.getUserInfo().getEmail();
         } else if (authority instanceof OAuth2UserAuthority oauthAuthority) {
           Object value = oauthAuthority.getAttributes().get("email");
-          if (value instanceof String emailValue) email = emailValue;
+          if (value instanceof String emailValue) {
+            email = emailValue;
+          }
         }
         if (email != null) {
           RolePermissionService.UserPermissions user = permissions.user(email);
@@ -120,19 +124,24 @@ public class SecurityConfiguration {
   @Bean
   @Order(1)
   SecurityFilterChain apiSecurityFilterChain(
-      HttpSecurity http, JwtAuthenticationConverter jwtAuthenticationConverter,
-      MongoUserDetailsService userDetailsService) throws Exception {
-    return http
-        .securityMatcher(request -> {
-          String path = request.getRequestURI().substring(request.getContextPath().length());
-          return path.startsWith("/api/v1/") || path.startsWith("/actuator/");
-        })
-        .csrf(csrf -> csrf.disable())
-        .userDetailsService(userDetailsService)
-        .exceptionHandling(exceptions -> exceptions.authenticationEntryPoint(
-            new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
+      HttpSecurity http, JwtAuthenticationConverter jwtAuthenticationConverter) throws Exception {
+    RequestMatcher bearerRequest =
+        request -> {
+          String header = request.getHeader("Authorization");
+          return header != null && header.startsWith("Bearer ");
+        };
+    return http.securityMatcher(
+            request -> {
+              String path = request.getRequestURI().substring(request.getContextPath().length());
+              return path.startsWith("/api/v1/") || path.startsWith("/actuator/");
+            })
+        .csrf(csrf -> csrf.ignoringRequestMatchers(bearerRequest))
+        .exceptionHandling(
+            exceptions ->
+                exceptions.authenticationEntryPoint(
+                    new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
         .sessionManagement(
-            session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
         .authorizeHttpRequests(
             authorize ->
                 authorize
@@ -150,12 +159,14 @@ public class SecurityConfiguration {
                     .hasAuthority("member:delete")
                     .requestMatchers(HttpMethod.GET, "/api/v1/users/**")
                     .hasAuthority("user:manage")
-                    .requestMatchers(HttpMethod.POST, "/api/v1/users/**")
+                    .requestMatchers(HttpMethod.GET, "/api/v1/roles/**")
+                    .hasAuthority("role:manage")
+                    .requestMatchers(HttpMethod.POST, "/api/v1/users/identity")
+                    .hasAuthority("user:manage")
+                    .requestMatchers(HttpMethod.PUT, "/api/v1/users/identity/**")
                     .hasAuthority("user:manage")
                     .requestMatchers(HttpMethod.PUT, "/api/v1/users/**")
                     .hasAuthority("user:manage")
-                    .requestMatchers(HttpMethod.GET, "/api/v1/roles/**")
-                    .hasAuthority("role:manage")
                     .requestMatchers(HttpMethod.POST, "/api/v1/roles/**")
                     .hasAuthority("role:manage")
                     .requestMatchers(HttpMethod.PUT, "/api/v1/roles/**")
@@ -166,44 +177,49 @@ public class SecurityConfiguration {
                     .denyAll()
                     .anyRequest()
                     .authenticated())
-        .httpBasic(basic -> basic.authenticationEntryPoint(
-            new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
+        .httpBasic(basic -> basic.disable())
         .formLogin(form -> form.disable())
-        .oauth2ResourceServer(resourceServer -> resourceServer.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)))
+        .oauth2ResourceServer(
+            resourceServer ->
+                resourceServer.jwt(
+                    jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)))
         .build();
   }
 
   @Bean
   SecurityFilterChain securityFilterChain(
-      HttpSecurity http, OAuth2AuthorizationRequestResolver authorizationRequestResolver,
-      MongoUserDetailsService userDetailsService,
+      HttpSecurity http,
+      OAuth2AuthorizationRequestResolver authorizationRequestResolver,
       GrantedAuthoritiesMapper oauthPermissionMapper,
       CurrentPermissionAuthorizationManager currentPermissionAuthorizationManager)
       throws Exception {
-    return http
-        .userDetailsService(userDetailsService)
-        .sessionManagement(
+    return http.sessionManagement(
             session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
         .authorizeHttpRequests(
             authorize ->
                 authorize
-                    .requestMatchers("/login", "/css/**")
+                    .requestMatchers("/login", "/css/**", "/js/**")
                     .permitAll()
-                    .requestMatchers("/", "/members/**")
+                    .requestMatchers("/no-access", "/forbidden")
+                    .authenticated()
+                    .requestMatchers("/", "/members/**", "/users/**", "/roles/**")
                     .access(currentPermissionAuthorizationManager)
+                    .requestMatchers("/api/v1/**")
+                    .authenticated()
                     .anyRequest()
                     .authenticated())
-        .formLogin(form -> form.loginPage("/login").permitAll())
+        .formLogin(form -> form.disable())
         .oauth2Login(
             oauth2Login ->
                 oauth2Login
                     .loginPage("/login")
-                    .userInfoEndpoint(userInfo -> userInfo.userAuthoritiesMapper(oauthPermissionMapper))
+                    .defaultSuccessUrl("/", false)
+                    .userInfoEndpoint(
+                        userInfo -> userInfo.userAuthoritiesMapper(oauthPermissionMapper))
                     .authorizationEndpoint(
                         authorization ->
                             authorization.authorizationRequestResolver(
                                 authorizationRequestResolver)))
         .build();
   }
-
 }

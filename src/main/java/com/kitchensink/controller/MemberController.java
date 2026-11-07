@@ -5,10 +5,11 @@ import com.kitchensink.dto.MemberRequest;
 import com.kitchensink.model.Member;
 import com.kitchensink.service.MemberService;
 import com.kitchensink.service.MemberService.MemberPage;
+import com.kitchensink.validation.Validator;
 import java.net.URI;
-import java.util.List;
 import java.time.Duration;
 import java.util.Date;
+import java.util.List;
 import org.bson.Document;
 import org.bson.types.ObjectId;
 import org.springframework.data.domain.Sort;
@@ -16,6 +17,7 @@ import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.index.Index;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -27,8 +29,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
-import org.springframework.transaction.annotation.Transactional;
-import com.kitchensink.validation.Validator;
 
 /** REST API for searching and managing members. */
 @RestController
@@ -37,15 +37,33 @@ public class MemberController {
   private final MemberService memberService;
   private final MongoTemplate mongoTemplate;
 
+  /**
+   * Constructs a new member controller.
+   *
+   * @param memberService member service for business logic
+   * @param mongoTemplate mongo template for persistence operations
+   */
   public MemberController(MemberService memberService, MongoTemplate mongoTemplate) {
     this.memberService = memberService;
     this.mongoTemplate = mongoTemplate;
-    mongoTemplate.indexOps("idempotency_keys").ensureIndex(
-        new Index().on("key", Sort.Direction.ASC).unique());
-    mongoTemplate.indexOps("idempotency_keys").ensureIndex(
-        new Index().on("createdAt", Sort.Direction.ASC).expire(Duration.ofHours(24)));
+    mongoTemplate
+        .indexOps("idempotency_keys")
+        .ensureIndex(new Index().on("key", Sort.Direction.ASC).unique());
+    mongoTemplate
+        .indexOps("idempotency_keys")
+        .ensureIndex(new Index().on("createdAt", Sort.Direction.ASC).expire(Duration.ofHours(24)));
   }
 
+  /**
+   * Searches members with cursor-based pagination and filtering.
+   *
+   * @param q optional search term
+   * @param status optional status filter
+   * @param sort sort field
+   * @param limit maximum page size
+   * @param cursor cursor token
+   * @return paginated response containing members and page metadata
+   */
   @GetMapping
   public MemberListResponse search(
       @RequestParam(required = false) String q,
@@ -54,14 +72,22 @@ public class MemberController {
       @RequestParam(defaultValue = "50") int limit,
       @RequestParam(required = false) String cursor) {
     MemberPage page = memberService.search(q, status, sort, limit, cursor);
-    return new MemberListResponse(page.data(),
-        new PageMetadata(page.limit(), page.nextCursor(), page.hasMore()));
+    return new MemberListResponse(
+        page.data(), new PageMetadata(page.limit(), page.nextCursor(), page.hasMore()));
   }
 
+  /**
+   * Finds a member by formatted member identifier.
+   *
+   * @param memberId formatted member identifier
+   * @return matching member
+   */
   @GetMapping("/by-member-id/{memberId}")
   public Member findByMemberId(@PathVariable String memberId) {
     Member member = memberService.findByMemberId(Validator.memberId(memberId));
-    if (member == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Member not found");
+    if (member == null) {
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Member not found");
+    }
     return member;
   }
 
@@ -70,51 +96,65 @@ public class MemberController {
     return memberService.findByEmailActive(email);
   }
 
+  /**
+   * Finds a member by primary key identifier.
+   *
+   * @param id member object id
+   * @return matching member
+   */
   @GetMapping("/{id}")
   public Member findById(@PathVariable ObjectId id) {
     Member member = memberService.findById(id);
-    if (member == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Member not found");
+    if (member == null) {
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Member not found");
+    }
     return member;
   }
 
+  /**
+   * Creates a new member with idempotency guarantee.
+   *
+   * @param idempotencyKey unique key to ensure idempotency
+   * @param request member registration payload
+   * @return created member with location header
+   */
   @PostMapping
   @Transactional
   public ResponseEntity<Member> create(
-      @RequestHeader("Idempotency-Key") String idempotencyKey,
-      @RequestBody MemberRequest request) {
+      @RequestHeader("Idempotency-Key") String idempotencyKey, @RequestBody MemberRequest request) {
     idempotencyKey = Validator.idempotencyKey(idempotencyKey);
-    Document prior = mongoTemplate.findOne(
-        org.springframework.data.mongodb.core.query.Query.query(
-            org.springframework.data.mongodb.core.query.Criteria.where("key").is(idempotencyKey)),
-        Document.class, "idempotency_keys");
+    Document prior =
+        mongoTemplate.findOne(
+            org.springframework.data.mongodb.core.query.Query.query(
+                org.springframework.data.mongodb.core.query.Criteria.where("key")
+                    .is(idempotencyKey)),
+            Document.class,
+            "idempotency_keys");
     if (prior != null) {
       ObjectId memberId = prior.getObjectId("memberId");
       Member previous = memberId == null ? null : memberService.findById(memberId);
-      if (previous == null) throw new ResponseStatusException(HttpStatus.CONFLICT, "Request with this key is still processing");
-      return ResponseEntity.created(URI.create("/api/v1/members/" + previous.getId())).body(previous);
+      if (previous == null) {
+        throw new ResponseStatusException(
+            HttpStatus.CONFLICT, "Request with this key is still processing");
+      }
+      return ResponseEntity.created(URI.create("/api/v1/members/" + previous.getId()))
+          .body(previous);
     }
-    mongoTemplate.insert(new Document("key", idempotencyKey).append("createdAt", new Date()), "idempotency_keys");
-    try {
-      request.validate();
-      Member member = Member.create();
-      member.setFirstName(request.getFirstName());
-      member.setLastName(request.getLastName());
-      member.setEmail(request.getEmail());
-      member.setPhone(request.getPhone());
-      Member created = memberService.register(member);
-      mongoTemplate.updateFirst(
-          org.springframework.data.mongodb.core.query.Query.query(
-              org.springframework.data.mongodb.core.query.Criteria.where("key").is(idempotencyKey)),
-          new org.springframework.data.mongodb.core.query.Update().set("memberId", created.getId()),
-          "idempotency_keys");
-      return ResponseEntity.created(URI.create("/api/v1/members/" + created.getId())).body(created);
-    } catch (RuntimeException exception) {
-      mongoTemplate.remove(
-          org.springframework.data.mongodb.core.query.Query.query(
-              org.springframework.data.mongodb.core.query.Criteria.where("key").is(idempotencyKey)),
-          "idempotency_keys");
-      throw exception;
-    }
+    mongoTemplate.insert(
+        new Document("key", idempotencyKey).append("createdAt", new Date()), "idempotency_keys");
+    request.validate();
+    Member member = Member.create();
+    member.setFirstName(request.getFirstName());
+    member.setLastName(request.getLastName());
+    member.setEmail(request.getEmail());
+    member.setPhone(request.getPhone());
+    Member created = memberService.register(member);
+    mongoTemplate.updateFirst(
+        org.springframework.data.mongodb.core.query.Query.query(
+            org.springframework.data.mongodb.core.query.Criteria.where("key").is(idempotencyKey)),
+        new org.springframework.data.mongodb.core.query.Update().set("memberId", created.getId()),
+        "idempotency_keys");
+    return ResponseEntity.created(URI.create("/api/v1/members/" + created.getId())).body(created);
   }
 
   @PatchMapping("/{id}")
@@ -129,8 +169,13 @@ public class MemberController {
   }
 
   @PostMapping("/{id}/restore")
-  public Member restore(@PathVariable ObjectId id) { return memberService.restore(id); }
+  public Member restore(@PathVariable ObjectId id) {
+    return memberService.restore(id);
+  }
 
+  /** Response representation for paginated member searches. */
   public record MemberListResponse(List<Member> data, PageMetadata page) {}
+
+  /** Pagination metadata including limits and cursor position. */
   public record PageMetadata(int limit, String nextCursor, boolean hasMore) {}
 }

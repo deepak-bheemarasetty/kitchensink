@@ -13,14 +13,10 @@ class SecurityConfigurationTest {
   void clientRegistrationAddsTrailingSlashToIssuerWhenMissing() {
     ClientRegistrationRepository registrations =
         new SecurityConfiguration()
-            .clientRegistrationRepository(
-                "https://tenant.example", "client-id", "client-secret");
+            .clientRegistrationRepository("https://tenant.example", "client-id", "client-secret");
 
     assertThat(
-            registrations
-                .findByRegistrationId("auth0")
-                .getProviderDetails()
-                .getAuthorizationUri())
+            registrations.findByRegistrationId("auth0").getProviderDetails().getAuthorizationUri())
         .isEqualTo("https://tenant.example/authorize");
   }
 
@@ -28,14 +24,10 @@ class SecurityConfigurationTest {
   void clientRegistrationKeepsExistingIssuerSlash() {
     ClientRegistrationRepository registrations =
         new SecurityConfiguration()
-            .clientRegistrationRepository(
-                "https://tenant.example/", "client-id", "client-secret");
+            .clientRegistrationRepository("https://tenant.example/", "client-id", "client-secret");
 
     assertThat(
-            registrations
-                .findByRegistrationId("auth0")
-                .getProviderDetails()
-                .getAuthorizationUri())
+            registrations.findByRegistrationId("auth0").getProviderDetails().getAuthorizationUri())
         .isEqualTo("https://tenant.example/authorize");
   }
 

@@ -89,10 +89,7 @@ class FeaturedMemberCacheServiceTest {
     when(memberRepository.findById(1000L)).thenReturn(Optional.empty());
     for (int i = 0; i <= 1_000; i++) {
       cacheService.recordView(
-          member(
-              (long) i,
-              "Member %04d".formatted(i),
-              "member%d@example.com".formatted(i)));
+          member((long) i, "Member %04d".formatted(i), "member%d@example.com".formatted(i)));
     }
 
     assertThat(cacheService.recordView(1000L)).isEmpty();
@@ -109,8 +106,8 @@ class FeaturedMemberCacheServiceTest {
             member(3L, "Alpha", "alpha@example.com"),
             member(4L, "Beta", "beta@example.com"),
             member(5L, "Gamma", "gamma@example.com"));
-    members.forEach(member -> when(memberRepository.findById(member.getId()))
-        .thenReturn(Optional.of(member)));
+    members.forEach(
+        member -> when(memberRepository.findById(member.getId())).thenReturn(Optional.of(member)));
 
     members.forEach(member -> cacheService.recordView(member.getId()));
     cacheService.recordView(5L);

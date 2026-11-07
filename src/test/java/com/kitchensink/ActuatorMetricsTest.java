@@ -39,9 +39,7 @@ class ActuatorMetricsTest {
   @Test
   @WithAnonymousUser
   void metricsEndpointRequiresAuthentication() throws Exception {
-    mockMvc
-        .perform(get("/actuator/metrics"))
-        .andExpect(status().isUnauthorized());
+    mockMvc.perform(get("/actuator/metrics")).andExpect(status().isUnauthorized());
   }
 
   @Test

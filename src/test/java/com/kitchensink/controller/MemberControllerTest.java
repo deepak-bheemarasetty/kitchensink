@@ -78,9 +78,7 @@ class MemberControllerTest {
         .thenReturn(new MemberCursorPage(List.of(member), true, false));
 
     mockMvc
-        .perform(
-            get("/rest/members")
-                .param("afterEmail", "jane@example.com"))
+        .perform(get("/rest/members").param("afterEmail", "jane@example.com"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.hasPrevious").value(true))
         .andExpect(jsonPath("$.previousCursor.email").value("jane@example.com"));
@@ -91,8 +89,9 @@ class MemberControllerTest {
   @Test
   void listMembersRejectsBothCursorsAtOnce() throws Exception {
     when(memberPaginationService.getPage("jane@example.com", "other@example.com"))
-        .thenThrow(new ResponseStatusException(
-            org.springframework.http.HttpStatus.BAD_REQUEST, "Invalid cursor"));
+        .thenThrow(
+            new ResponseStatusException(
+                org.springframework.http.HttpStatus.BAD_REQUEST, "Invalid cursor"));
 
     mockMvc
         .perform(
@@ -143,9 +142,7 @@ class MemberControllerTest {
                     }
                     """))
         .andExpect(status().isCreated())
-        .andExpect(
-            header().string(
-                "Location", "http://localhost/rest/members/2"))
+        .andExpect(header().string("Location", "http://localhost/rest/members/2"))
         .andExpect(jsonPath("$.id").value(2))
         .andExpect(jsonPath("$.name").value("Jane Doe"))
         .andExpect(jsonPath("$.email").value("jane@example.com"))

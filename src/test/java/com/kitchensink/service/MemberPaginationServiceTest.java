@@ -56,8 +56,7 @@ class MemberPaginationServiceTest {
   void summaryPageProjectsOnlyMemberListFields() {
     when(mongoTemplate.find(any(Query.class), eq(Member.class))).thenReturn(List.of(member(1)));
 
-    MemberPaginationService.MemberCursorPage page =
-        paginationService.getSummaryPage(null, null);
+    MemberPaginationService.MemberCursorPage page = paginationService.getSummaryPage(null, null);
 
     assertThat(page.members()).hasSize(1);
     Query query = captureQuery();
@@ -110,7 +109,8 @@ class MemberPaginationServiceTest {
     MemberPaginationService.MemberCursorPage page =
         paginationService.getPage(null, "member03@example.com");
 
-    assertThat(page.members()).extracting(Member::getEmail)
+    assertThat(page.members())
+        .extracting(Member::getEmail)
         .containsExactly("member01@example.com", "member02@example.com");
     assertThat(page.hasPrevious()).isFalse();
     assertThat(page.hasNext()).isTrue();
@@ -172,8 +172,7 @@ class MemberPaginationServiceTest {
   @Test
   void rejectsTwoCursorsAtOnce() {
     assertThatThrownBy(
-            () ->
-                paginationService.getPage("member01@example.com", "member02@example.com"))
+            () -> paginationService.getPage("member01@example.com", "member02@example.com"))
         .isInstanceOf(ResponseStatusException.class);
   }
 

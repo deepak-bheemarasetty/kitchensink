@@ -116,10 +116,7 @@ class MemberViewControllerTest {
     when(featuredMemberCacheService.getFeaturedMembers()).thenReturn(List.of());
 
     mockMvc
-        .perform(
-            get("/")
-                .param("searchEmail", " Jane@Example.COM ")
-                .param("selected", "1"))
+        .perform(get("/").param("searchEmail", " Jane@Example.COM ").param("selected", "1"))
         .andExpect(status().isOk())
         .andExpect(model().attribute("searchEmail", "jane@example.com"))
         .andExpect(model().attribute("searchResult", member))
@@ -133,27 +130,21 @@ class MemberViewControllerTest {
   }
 
   @Test
-  void homeSearchShowsNotFoundMessageAndDoesNotShowDetailsForUnknownMember()
-      throws Exception {
+  void homeSearchShowsNotFoundMessageAndDoesNotShowDetailsForUnknownMember() throws Exception {
     when(memberRepository.findByEmailIgnoreCase("missing@example.com"))
         .thenReturn(Optional.empty());
     when(featuredMemberCacheService.getFeaturedMembers()).thenReturn(List.of());
     when(featuredMemberCacheService.recordView(99L)).thenReturn(Optional.empty());
 
     mockMvc
-        .perform(
-            get("/")
-                .param("searchEmail", "missing@example.com")
-                .param("selected", "99"))
+        .perform(get("/").param("searchEmail", "missing@example.com").param("selected", "99"))
         .andExpect(status().isOk())
         .andExpect(model().attribute("searchNotFound", true))
         .andExpect(
             content().string(containsString("No member found with that full email address.")))
         .andExpect(content().string(containsString("id=\"emailSearch\"")))
         .andExpect(
-            content()
-                .string(
-                    org.hamcrest.Matchers.not(containsString("member-details-dialog"))));
+            content().string(org.hamcrest.Matchers.not(containsString("member-details-dialog"))));
   }
 
   @Test
@@ -204,11 +195,11 @@ class MemberViewControllerTest {
     var result =
         mockMvc
             .perform(
-            get("/members")
-                .param("selected", "1")
-                .param("email", "")
-                .param("afterEmail", "")
-                .param("beforeEmail", ""))
+                get("/members")
+                    .param("selected", "1")
+                    .param("email", "")
+                    .param("afterEmail", "")
+                    .param("beforeEmail", ""))
             .andExpect(status().isOk())
             .andExpect(view().name("all-members"))
             .andExpect(content().string(containsString("Jane Doe")))
@@ -333,8 +324,7 @@ class MemberViewControllerTest {
         .andExpect(status().isOk())
         .andExpect(view().name("index"))
         .andExpect(model().attributeExists("registrationError"))
-        .andExpect(
-            content().string(containsString("Email already registered: jane@example.com")));
+        .andExpect(content().string(containsString("Email already registered: jane@example.com")));
   }
 
   @Test
