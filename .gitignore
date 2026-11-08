@@ -1,8 +1,6 @@
 target/
-.vscode/*
+.vscode/
+documentation/
 .env
-CHECKPOINT.md
 !.env.example
-mongo-database-credentials.txt
-users.json
 
