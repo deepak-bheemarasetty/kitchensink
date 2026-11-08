@@ -19,7 +19,8 @@ public final class Validator {
           "^[A-Za-z0-9_+\\-]+(?:\\.[A-Za-z0-9_+\\-]+)*@"
               + "(?=.{1,255}$)"
               + "(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)+[A-Za-z]{2,63}$");
-  private static final Pattern PHONE = Pattern.compile("^\\+[1-9][0-9]{7,14}$");
+  private static final Pattern PHONE = Pattern.compile("^[1-9][0-9]{5,13}$");
+  private static final Pattern COUNTRY_CODE = Pattern.compile("^[0-9]{1,4}$");
   private static final Pattern ROLE = Pattern.compile("^[a-z0-9-]{2,30}$");
   private static final Set<String> PERMISSIONS =
       Set.of(
@@ -85,7 +86,7 @@ public final class Validator {
       }
       return null;
     }
-    if (normalized.length() > 50
+    if (normalized.length() > 60
         || !NAME.matcher(normalized).matches()
         || normalized.codePoints().noneMatch(Character::isLetter)) {
       fail(field, "is invalid");
@@ -119,7 +120,24 @@ public final class Validator {
   public static String phone(String value) {
     String normalized = normalizeRequired(value, "phone", 32).replaceAll("[\\s()-]", "");
     if (!PHONE.matcher(normalized).matches()) {
-      fail("phone", "must use E.164 format");
+      fail("phone", "must contain 6 to 14 digits and cannot start with zero");
+    }
+    return normalized;
+  }
+
+  /**
+   * Validates and normalizes an optional country code.
+   *
+   * @param value raw country code string
+   * @return normalized country code string or null
+   */
+  public static String countryCode(String value) {
+    if (value == null || value.isBlank()) {
+      return null;
+    }
+    String normalized = value.trim();
+    if (!COUNTRY_CODE.matcher(normalized).matches()) {
+      fail("countryCode", "must contain 1 to 4 digits");
     }
     return normalized;
   }
@@ -452,6 +470,7 @@ public final class Validator {
     lastName(member.getLastName());
     email(member.getEmail());
     phone(member.getPhone());
+    countryCode(member.getCountryCode());
     memberId(member.getMemberId());
     status(member.getStatus());
     if (member.getVersion() == null || member.getVersion() < 1) {

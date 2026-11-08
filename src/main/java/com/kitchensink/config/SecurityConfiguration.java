@@ -2,11 +2,8 @@ package com.kitchensink.config;
 
 import com.kitchensink.service.RolePermissionService;
 import java.util.Collection;
-import java.util.Date;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
-import org.bson.Document;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.context.annotation.Bean;
@@ -23,7 +20,6 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.authority.mapping.GrantedAuthoritiesMapper;
-import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
@@ -45,6 +41,14 @@ import org.springframework.security.web.util.matcher.RequestMatcher;
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 @EnableWebSecurity
 public class SecurityConfiguration {
+
+  private static final String CSP_POLICY =
+      "default-src 'self'; "
+          + "script-src 'self'; "
+          + "style-src 'self' 'unsafe-inline'; "
+          + "img-src 'self' data:; "
+          + "frame-ancestors 'none'; "
+          + "form-action 'self';";
 
   @Bean
   JwtAuthenticationConverter jwtAuthenticationConverter(RolePermissionService permissions) {
@@ -138,26 +142,16 @@ public class SecurityConfiguration {
    * @return an {@link AuthenticationSuccessHandler} that records login time and redirects to "/"
    */
   @Bean
-  AuthenticationSuccessHandler loginSuccessHandler(MongoTemplate mongoTemplate) {
+  AuthenticationSuccessHandler loginSuccessHandler(
+      MongoTemplate mongoTemplate, com.kitchensink.service.IdentityResolver identityResolver) {
     return (request, response, authentication) -> {
-      // Resolve the authenticated user's email
-      String email = null;
-      if (authentication instanceof OAuth2AuthenticationToken oauth) {
-        email = oauth.getPrincipal().getAttribute("email");
-      }
-      if (email == null) {
-        email = authentication.getName();
-      }
-      // Update lastLoginAt in the users collection
-      Document user =
-          mongoTemplate.findOne(
-              Query.query(Criteria.where("usernameLower").is(email.toLowerCase(Locale.ROOT))),
-              Document.class,
-              "users");
-      if (user != null) {
-        user.put("lastLoginAt", Date.from(java.time.Instant.now()));
-        mongoTemplate.save(user, "users");
-      }
+      String identity = identityResolver.resolveIdentity(authentication);
+      // Update lastLoginAt in the users collection atomically without full document overwrite
+      mongoTemplate.updateFirst(
+          Query.query(Criteria.where("usernameLower").is(identity)),
+          new org.springframework.data.mongodb.core.query.Update()
+              .set("lastLoginAt", java.time.Instant.now()),
+          "users");
       // Redirect to default success URL
       new SimpleUrlAuthenticationSuccessHandler("/")
           .onAuthenticationSuccess(request, response, authentication);
@@ -178,6 +172,13 @@ public class SecurityConfiguration {
               String path = request.getRequestURI().substring(request.getContextPath().length());
               return path.startsWith("/api/v1/") || path.startsWith("/actuator/");
             })
+        .headers(
+            headers ->
+                headers
+                    .frameOptions(frame -> frame.deny())
+                    .contentSecurityPolicy(csp -> csp.policyDirectives(CSP_POLICY))
+                    .httpStrictTransportSecurity(
+                        hsts -> hsts.includeSubDomains(true).maxAgeInSeconds(31536000)))
         .csrf(csrf -> csrf.ignoringRequestMatchers(bearerRequest))
         .exceptionHandling(
             exceptions ->
@@ -239,6 +240,13 @@ public class SecurityConfiguration {
       throws Exception {
     return http.sessionManagement(
             session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
+        .headers(
+            headers ->
+                headers
+                    .frameOptions(frame -> frame.deny())
+                    .contentSecurityPolicy(csp -> csp.policyDirectives(CSP_POLICY))
+                    .httpStrictTransportSecurity(
+                        hsts -> hsts.includeSubDomains(true).maxAgeInSeconds(31536000)))
         .authorizeHttpRequests(
             authorize ->
                 authorize

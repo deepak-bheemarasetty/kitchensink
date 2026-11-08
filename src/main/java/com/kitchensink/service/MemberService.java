@@ -26,7 +26,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -36,10 +35,22 @@ import org.springframework.web.server.ResponseStatusException;
 public class MemberService {
   private final MemberRepository memberRepository;
   private final MongoTemplate mongoTemplate;
+  private final IdentityResolver identityResolver;
 
-  public MemberService(MemberRepository memberRepository, MongoTemplate mongoTemplate) {
+  /**
+   * Constructs the MemberService with required repositories and resolvers.
+   *
+   * @param memberRepository member persistence repository
+   * @param mongoTemplate Mongo operations template
+   * @param identityResolver authenticated identity and actor resolver
+   */
+  public MemberService(
+      MemberRepository memberRepository,
+      MongoTemplate mongoTemplate,
+      IdentityResolver identityResolver) {
     this.memberRepository = memberRepository;
     this.mongoTemplate = mongoTemplate;
+    this.identityResolver = identityResolver;
   }
 
   /**
@@ -49,23 +60,43 @@ public class MemberService {
    * @return registered member
    */
   @Transactional
-  public Member register(Member member) {
+  public Member register(Member member, String idempotencyKey) {
     requirePermission("member:create");
+    if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+      String validatedKey = Validator.idempotencyKey(idempotencyKey);
+      org.bson.Document prior =
+          mongoTemplate.findOne(
+              Query.query(Criteria.where("key").is(validatedKey)),
+              org.bson.Document.class,
+              "idempotency_keys");
+      if (prior != null) {
+        ObjectId priorMemberId = prior.getObjectId("memberId");
+        Member previous = priorMemberId == null ? null : findById(priorMemberId);
+        if (previous == null) {
+          throw new ResponseStatusException(
+              HttpStatus.CONFLICT, "Request with this key is still processing");
+        }
+        return previous;
+      }
+    }
     member.setFirstName(Validator.firstName(member.getFirstName()));
     member.setLastName(Validator.lastName(member.getLastName()));
-    if (member.getLastName() == null) {
-      member.setLastName("");
+    if (member.getLastName() == null || member.getLastName().isBlank()) {
+      member.setLastName(null);
     }
     member.setPhone(Validator.phone(member.getPhone()));
+    member.setCountryCode(Validator.countryCode(member.getCountryCode()));
     member.setEmail(Validator.email(member.getEmail()));
     member.setEmailLower(member.getEmail().toLowerCase(Locale.ROOT));
-    member.setFullNameLower(
-        (member.getFirstName() + " " + member.getLastName()).toLowerCase(Locale.ROOT));
+    String lastNamePart = member.getLastName() == null ? "" : " " + member.getLastName();
+    member.setFullNameLower((member.getFirstName() + lastNamePart).trim().toLowerCase(Locale.ROOT));
     member.setMemberId(
         "M-"
-            + Instant.now().getEpochSecond()
-            + "-"
-            + new ObjectId().toHexString().substring(0, 6).toUpperCase(Locale.ROOT));
+            + UUID.randomUUID()
+                .toString()
+                .replace("-", "")
+                .substring(0, 16)
+                .toUpperCase(Locale.ROOT));
     member.setStatus("active");
     member.setCreatedAt(Instant.now());
     member.setUpdatedAt(member.getCreatedAt());
@@ -76,6 +107,14 @@ public class MemberService {
     member.validate();
     try {
       Member saved = mongoTemplate.insert(member);
+      if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+        String validatedKey = Validator.idempotencyKey(idempotencyKey);
+        mongoTemplate.insert(
+            new org.bson.Document("key", validatedKey)
+                .append("memberId", saved.getId())
+                .append("createdAt", new Date()),
+            "idempotency_keys");
+      }
       audit(
           "member.create",
           saved,
@@ -96,6 +135,17 @@ public class MemberService {
     } catch (DuplicateKeyException exception) {
       throw new DuplicateEmailException("Email already registered: " + member.getEmail());
     }
+  }
+
+  /**
+   * Registers and persists a new member record without an idempotency key.
+   *
+   * @param member member entity to persist
+   * @return registered member
+   */
+  @Transactional
+  public Member register(Member member) {
+    return register(member, null);
   }
 
   /**
@@ -124,6 +174,7 @@ public class MemberService {
   }
 
   public Member findByEmailActive(String email) {
+    requirePermission("member:view");
     return findByEmail(email);
   }
 
@@ -264,6 +315,9 @@ public class MemberService {
     if (patch.getPhone() != null) {
       update.set("phone", Validator.phone(patch.getPhone()));
     }
+    if (patch.getCountryCode() != null) {
+      update.set("countryCode", Validator.countryCode(patch.getCountryCode()));
+    }
     if (patch.getStatus() != null) {
       update.set("status", patch.getStatus());
     }
@@ -360,32 +414,22 @@ public class MemberService {
     log.setEntityType("member");
     log.setEntityId(member.getId());
     log.setChanges(changes);
-    log.setRequestId(UUID.randomUUID().toString());
+    String mdcRequestId = org.slf4j.MDC.get("requestId");
+    log.setRequestId(
+        mdcRequestId != null && !mdcRequestId.isBlank()
+            ? mdcRequestId
+            : UUID.randomUUID().toString());
+    String mdcClientIp = org.slf4j.MDC.get("clientIp");
+    if (mdcClientIp != null && !mdcClientIp.isBlank() && mdcClientIp.length() <= 64) {
+      log.setIp(mdcClientIp);
+    }
     log.validateForInsert();
     mongoTemplate.insert(log);
   }
 
   private ObjectId currentActorId() {
     Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-    if (authentication == null || authentication.getName() == null) {
-      throw new AccessDeniedException("Authentication required");
-    }
-    String username = authentication.getName();
-    if (authentication instanceof JwtAuthenticationToken jwt) {
-      String email = jwt.getToken().getClaimAsString("email");
-      if (email != null) {
-        username = email;
-      }
-    }
-    org.bson.Document user =
-        mongoTemplate.findOne(
-            Query.query(Criteria.where("usernameLower").is(username.toLowerCase(Locale.ROOT))),
-            org.bson.Document.class,
-            "users");
-    if (user == null) {
-      throw new AccessDeniedException("Authenticated user is not registered in the application");
-    }
-    return user.getObjectId("_id");
+    return identityResolver.requireActorId(authentication);
   }
 
   /** Paginated member results and cursor information. */

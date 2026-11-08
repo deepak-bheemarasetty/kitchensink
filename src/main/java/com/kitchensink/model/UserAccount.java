@@ -10,15 +10,14 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 /** Application login account, separate from directory members. */
+@SuppressWarnings("serial")
 @Document(collection = "users")
-public class UserAccount {
+public class UserAccount extends BaseEntity {
   @Id private ObjectId id;
   private String username;
   private String usernameLower;
   private List<String> roles;
   private boolean isActive;
-  private Instant createdAt;
-  private Instant updatedAt;
   private Instant lastLoginAt;
 
   public ObjectId getId() {
@@ -61,22 +60,6 @@ public class UserAccount {
     isActive = active;
   }
 
-  public Instant getCreatedAt() {
-    return createdAt;
-  }
-
-  public void setCreatedAt(Instant createdAt) {
-    this.createdAt = createdAt;
-  }
-
-  public Instant getUpdatedAt() {
-    return updatedAt;
-  }
-
-  public void setUpdatedAt(Instant updatedAt) {
-    this.updatedAt = updatedAt;
-  }
-
   public Instant getLastLoginAt() {
     return lastLoginAt;
   }
@@ -85,7 +68,6 @@ public class UserAccount {
     this.lastLoginAt = lastLoginAt;
   }
 
-  /** Validates persisted account invariants before save or after loading from storage. */
   public void validate() {
     Validator.userAccount(this);
   }

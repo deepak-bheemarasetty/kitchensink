@@ -10,6 +10,7 @@ public class MemberPatchRequest {
   private String lastName;
   private String email;
   private String phone;
+  private String countryCode;
   private String memberId;
   private String status;
 
@@ -49,6 +50,14 @@ public class MemberPatchRequest {
     return phone;
   }
 
+  public String getCountryCode() {
+    return countryCode;
+  }
+
+  public void setCountryCode(String countryCode) {
+    this.countryCode = countryCode;
+  }
+
   public void setPhone(String phone) {
     this.phone = phone;
   }
@@ -84,6 +93,9 @@ public class MemberPatchRequest {
     }
     if (phone != null) {
       phone = Validator.phone(phone);
+    }
+    if (countryCode != null) {
+      countryCode = Validator.countryCode(countryCode);
     }
     if (status != null) {
       status = Validator.status(status);

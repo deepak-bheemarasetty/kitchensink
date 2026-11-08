@@ -130,6 +130,22 @@ public class GlobalExceptionHandler {
         .body(error(HttpStatus.CONFLICT, "The request conflicts with existing data"));
   }
 
+  /**
+   * Catches any unhandled exceptions to prevent stack trace leakage to clients.
+   *
+   * @param exception unhandled exception
+   * @return internal server error response with sanitized message
+   */
+  @ExceptionHandler(Exception.class)
+  public ResponseEntity<Map<String, Object>> handleGenericException(Exception exception) {
+    LOGGER.error("Unhandled exception processing request: ", exception);
+    return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+        .body(
+            error(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "An unexpected internal error occurred. Please contact support."));
+  }
+
   private Map<String, Object> error(HttpStatus status, String message) {
     return Map.of(
         "error",

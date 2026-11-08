@@ -1,7 +1,6 @@
 package com.kitchensink.model;
 
 import com.kitchensink.validation.Validator;
-import java.io.Serializable;
 import java.time.Instant;
 import org.bson.types.ObjectId;
 import org.springframework.data.annotation.Id;
@@ -12,7 +11,7 @@ import tools.jackson.databind.ser.std.ToStringSerializer;
 /** Member directory record. */
 @SuppressWarnings("serial")
 @Document(collection = "members")
-public class Member implements Serializable {
+public class Member extends BaseEntity {
   @Id private ObjectId id;
   private String memberId;
   private String firstName;
@@ -20,13 +19,9 @@ public class Member implements Serializable {
   private String fullNameLower;
   private String email;
   private String emailLower;
+  private String countryCode;
   private String phone;
   private String status;
-  private Instant createdAt;
-  private ObjectId createdBy;
-  private Instant updatedAt;
-  private ObjectId updatedBy;
-  private Integer version;
   private Instant deletedAt;
   private ObjectId deletedBy;
 
@@ -87,6 +82,7 @@ public class Member implements Serializable {
 
   public void setEmail(String email) {
     this.email = email;
+    this.emailLower = email == null ? null : email.toLowerCase();
   }
 
   public String getEmailLower() {
@@ -95,6 +91,14 @@ public class Member implements Serializable {
 
   public void setEmailLower(String emailLower) {
     this.emailLower = emailLower;
+  }
+
+  public String getCountryCode() {
+    return countryCode;
+  }
+
+  public void setCountryCode(String countryCode) {
+    this.countryCode = countryCode;
   }
 
   public String getPhone() {
@@ -111,46 +115,6 @@ public class Member implements Serializable {
 
   public void setStatus(String status) {
     this.status = status;
-  }
-
-  public Instant getCreatedAt() {
-    return createdAt;
-  }
-
-  public void setCreatedAt(Instant createdAt) {
-    this.createdAt = createdAt;
-  }
-
-  public ObjectId getCreatedBy() {
-    return createdBy;
-  }
-
-  public void setCreatedBy(ObjectId createdBy) {
-    this.createdBy = createdBy;
-  }
-
-  public Instant getUpdatedAt() {
-    return updatedAt;
-  }
-
-  public void setUpdatedAt(Instant updatedAt) {
-    this.updatedAt = updatedAt;
-  }
-
-  public ObjectId getUpdatedBy() {
-    return updatedBy;
-  }
-
-  public void setUpdatedBy(ObjectId updatedBy) {
-    this.updatedBy = updatedBy;
-  }
-
-  public Integer getVersion() {
-    return version;
-  }
-
-  public void setVersion(Integer version) {
-    this.version = version;
   }
 
   public Instant getDeletedAt() {

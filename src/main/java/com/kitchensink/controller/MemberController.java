@@ -2,22 +2,20 @@ package com.kitchensink.controller;
 
 import com.kitchensink.dto.MemberPatchRequest;
 import com.kitchensink.dto.MemberRequest;
+import com.kitchensink.dto.MemberResponse;
 import com.kitchensink.model.Member;
 import com.kitchensink.service.MemberService;
 import com.kitchensink.service.MemberService.MemberPage;
 import com.kitchensink.validation.Validator;
 import java.net.URI;
 import java.time.Duration;
-import java.util.Date;
 import java.util.List;
-import org.bson.Document;
 import org.bson.types.ObjectId;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.index.Index;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -48,10 +46,10 @@ public class MemberController {
     this.mongoTemplate = mongoTemplate;
     mongoTemplate
         .indexOps("idempotency_keys")
-        .ensureIndex(new Index().on("key", Sort.Direction.ASC).unique());
+        .createIndex(new Index().on("key", Sort.Direction.ASC).unique());
     mongoTemplate
         .indexOps("idempotency_keys")
-        .ensureIndex(new Index().on("createdAt", Sort.Direction.ASC).expire(Duration.ofHours(24)));
+        .createIndex(new Index().on("createdAt", Sort.Direction.ASC).expire(Duration.ofHours(24)));
   }
 
   /**
@@ -72,43 +70,45 @@ public class MemberController {
       @RequestParam(defaultValue = "50") int limit,
       @RequestParam(required = false) String cursor) {
     MemberPage page = memberService.search(q, status, sort, limit, cursor);
+    List<MemberResponse> responseList = page.data().stream().map(MemberResponse::from).toList();
     return new MemberListResponse(
-        page.data(), new PageMetadata(page.limit(), page.nextCursor(), page.hasMore()));
+        responseList, new PageMetadata(page.limit(), page.nextCursor(), page.hasMore()));
   }
 
   /**
    * Finds a member by formatted member identifier.
    *
    * @param memberId formatted member identifier
-   * @return matching member
+   * @return matching member response
    */
   @GetMapping("/by-member-id/{memberId}")
-  public Member findByMemberId(@PathVariable String memberId) {
+  public MemberResponse findByMemberId(@PathVariable String memberId) {
     Member member = memberService.findByMemberId(Validator.memberId(memberId));
     if (member == null) {
       throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Member not found");
     }
-    return member;
+    return MemberResponse.from(member);
   }
 
   @GetMapping("/by-email/{email:.+}")
-  public Member findByEmail(@PathVariable String email) {
-    return memberService.findByEmailActive(email);
+  public MemberResponse findByEmail(@PathVariable String email) {
+    Member member = memberService.findByEmailActive(Validator.email(email));
+    return MemberResponse.from(member);
   }
 
   /**
    * Finds a member by primary key identifier.
    *
    * @param id member object id
-   * @return matching member
+   * @return matching member response
    */
   @GetMapping("/{id}")
-  public Member findById(@PathVariable ObjectId id) {
+  public MemberResponse findById(@PathVariable ObjectId id) {
     Member member = memberService.findById(id);
     if (member == null) {
       throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Member not found");
     }
-    return member;
+    return MemberResponse.from(member);
   }
 
   /**
@@ -116,50 +116,26 @@ public class MemberController {
    *
    * @param idempotencyKey unique key to ensure idempotency
    * @param request member registration payload
-   * @return created member with location header
+   * @return created member response with location header
    */
   @PostMapping
-  @Transactional
-  public ResponseEntity<Member> create(
+  public ResponseEntity<MemberResponse> create(
       @RequestHeader("Idempotency-Key") String idempotencyKey, @RequestBody MemberRequest request) {
-    idempotencyKey = Validator.idempotencyKey(idempotencyKey);
-    Document prior =
-        mongoTemplate.findOne(
-            org.springframework.data.mongodb.core.query.Query.query(
-                org.springframework.data.mongodb.core.query.Criteria.where("key")
-                    .is(idempotencyKey)),
-            Document.class,
-            "idempotency_keys");
-    if (prior != null) {
-      ObjectId memberId = prior.getObjectId("memberId");
-      Member previous = memberId == null ? null : memberService.findById(memberId);
-      if (previous == null) {
-        throw new ResponseStatusException(
-            HttpStatus.CONFLICT, "Request with this key is still processing");
-      }
-      return ResponseEntity.created(URI.create("/api/v1/members/" + previous.getId()))
-          .body(previous);
-    }
-    mongoTemplate.insert(
-        new Document("key", idempotencyKey).append("createdAt", new Date()), "idempotency_keys");
     request.validate();
     Member member = Member.create();
     member.setFirstName(request.getFirstName());
     member.setLastName(request.getLastName());
     member.setEmail(request.getEmail());
+    member.setCountryCode(request.getCountryCode());
     member.setPhone(request.getPhone());
-    Member created = memberService.register(member);
-    mongoTemplate.updateFirst(
-        org.springframework.data.mongodb.core.query.Query.query(
-            org.springframework.data.mongodb.core.query.Criteria.where("key").is(idempotencyKey)),
-        new org.springframework.data.mongodb.core.query.Update().set("memberId", created.getId()),
-        "idempotency_keys");
-    return ResponseEntity.created(URI.create("/api/v1/members/" + created.getId())).body(created);
+    Member created = memberService.register(member, idempotencyKey);
+    return ResponseEntity.created(URI.create("/api/v1/members/" + created.getId()))
+        .body(MemberResponse.from(created));
   }
 
   @PatchMapping("/{id}")
-  public Member update(@PathVariable ObjectId id, @RequestBody MemberPatchRequest request) {
-    return memberService.update(id, request);
+  public MemberResponse update(@PathVariable ObjectId id, @RequestBody MemberPatchRequest request) {
+    return MemberResponse.from(memberService.update(id, request));
   }
 
   @DeleteMapping("/{id}")
@@ -169,12 +145,12 @@ public class MemberController {
   }
 
   @PostMapping("/{id}/restore")
-  public Member restore(@PathVariable ObjectId id) {
-    return memberService.restore(id);
+  public MemberResponse restore(@PathVariable ObjectId id) {
+    return MemberResponse.from(memberService.restore(id));
   }
 
   /** Response representation for paginated member searches. */
-  public record MemberListResponse(List<Member> data, PageMetadata page) {}
+  public record MemberListResponse(List<MemberResponse> data, PageMetadata page) {}
 
   /** Pagination metadata including limits and cursor position. */
   public record PageMetadata(int limit, String nextCursor, boolean hasMore) {}
