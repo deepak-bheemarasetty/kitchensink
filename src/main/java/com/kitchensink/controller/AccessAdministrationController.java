@@ -139,7 +139,8 @@ public class AccessAdministrationController {
   }
 
   /**
-   * Lists all users.
+   * Lists all users. The {@code _id} ObjectId is exposed as a plain hex string under the key {@code
+   * id} so the browser can pass it back as a URL path segment without serialization issues.
    *
    * @param actor authenticated user performing the action
    * @return list of user documents
@@ -151,8 +152,14 @@ public class AccessAdministrationController {
     List<Document> users = mongoTemplate.find(query, Document.class, "users");
     return users.stream()
         .peek(
-            user ->
-                user.put("isSelf", user.getString("username").equalsIgnoreCase(identity(actor))))
+            user -> {
+              user.put("isSelf", user.getString("username").equalsIgnoreCase(identity(actor)));
+              // Expose _id as a plain hex string so the client can use it in URL paths
+              org.bson.types.ObjectId oid = user.getObjectId("_id");
+              if (oid != null) {
+                user.put("id", oid.toHexString());
+              }
+            })
         .toList();
   }
 

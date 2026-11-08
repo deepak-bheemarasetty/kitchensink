@@ -2,13 +2,19 @@ package com.kitchensink.config;
 
 import com.kitchensink.service.RolePermissionService;
 import java.util.Collection;
+import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import org.bson.Document;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -17,6 +23,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.authority.mapping.GrantedAuthoritiesMapper;
+import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
@@ -28,7 +35,9 @@ import org.springframework.security.oauth2.core.oidc.user.OidcUserAuthority;
 import org.springframework.security.oauth2.core.user.OAuth2UserAuthority;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
+import org.springframework.security.web.authentication.SimpleUrlAuthenticationSuccessHandler;
 import org.springframework.security.web.util.matcher.RequestMatcher;
 
 /** Configures OIDC browser login and stateless JWT authentication for the API. */
@@ -36,6 +45,7 @@ import org.springframework.security.web.util.matcher.RequestMatcher;
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 @EnableWebSecurity
 public class SecurityConfiguration {
+
   @Bean
   JwtAuthenticationConverter jwtAuthenticationConverter(RolePermissionService permissions) {
     JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
@@ -121,6 +131,39 @@ public class SecurityConfiguration {
     return resolver;
   }
 
+  /**
+   * Updates the user's lastLoginAt field on every successful OAuth2 login.
+   *
+   * @param mongoTemplate the Mongo template used to persist the timestamp
+   * @return an {@link AuthenticationSuccessHandler} that records login time and redirects to "/"
+   */
+  @Bean
+  AuthenticationSuccessHandler loginSuccessHandler(MongoTemplate mongoTemplate) {
+    return (request, response, authentication) -> {
+      // Resolve the authenticated user's email
+      String email = null;
+      if (authentication instanceof OAuth2AuthenticationToken oauth) {
+        email = oauth.getPrincipal().getAttribute("email");
+      }
+      if (email == null) {
+        email = authentication.getName();
+      }
+      // Update lastLoginAt in the users collection
+      Document user =
+          mongoTemplate.findOne(
+              Query.query(Criteria.where("usernameLower").is(email.toLowerCase(Locale.ROOT))),
+              Document.class,
+              "users");
+      if (user != null) {
+        user.put("lastLoginAt", Date.from(java.time.Instant.now()));
+        mongoTemplate.save(user, "users");
+      }
+      // Redirect to default success URL
+      new SimpleUrlAuthenticationSuccessHandler("/")
+          .onAuthenticationSuccess(request, response, authentication);
+    };
+  }
+
   @Bean
   @Order(1)
   SecurityFilterChain apiSecurityFilterChain(
@@ -191,6 +234,7 @@ public class SecurityConfiguration {
       HttpSecurity http,
       OAuth2AuthorizationRequestResolver authorizationRequestResolver,
       GrantedAuthoritiesMapper oauthPermissionMapper,
+      AuthenticationSuccessHandler loginSuccessHandler,
       CurrentPermissionAuthorizationManager currentPermissionAuthorizationManager)
       throws Exception {
     return http.sessionManagement(
@@ -214,6 +258,7 @@ public class SecurityConfiguration {
                 oauth2Login
                     .loginPage("/login")
                     .defaultSuccessUrl("/", false)
+                    .successHandler(loginSuccessHandler)
                     .userInfoEndpoint(
                         userInfo -> userInfo.userAuthoritiesMapper(oauthPermissionMapper))
                     .authorizationEndpoint(

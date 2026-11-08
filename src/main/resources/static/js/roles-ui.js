@@ -4,6 +4,7 @@
   if (!rows) return;
   const token = document.querySelector('meta[name="csrf-token"]')?.content;
   const dialog = document.getElementById('role-dialog');
+  const confirmRoleDialog = document.getElementById('confirm-role-dialog');
   const form = document.getElementById('role-form');
   const notice = document.getElementById('role-notice');
   const csrfHeader = document.querySelector('meta[name="csrf-header"]')?.content || 'X-CSRF-TOKEN';
@@ -11,6 +12,7 @@
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   let roles = [];
   let editing;
+  let pendingDeleteRole = null;
   const announce = (text, error = false) => { notice.textContent=text; notice.classList.toggle('error',error); notice.hidden=false; };
   async function load() {
     try {
@@ -36,9 +38,23 @@
   rows.addEventListener('click',async event=>{
     const edit=event.target.closest('[data-edit]'); const remove=event.target.closest('[data-delete]');
     if(edit) open(roles.find(role=>role.name===edit.dataset.edit));
-    if(remove && window.confirm(`Delete role ${remove.dataset.delete}?`)) {
-      try { const response=await fetch(`${apiBase}/roles/${encodeURIComponent(remove.dataset.delete)}`,{method:'DELETE',headers:headers()}); if(!response.ok) throw new Error('This role may be assigned to users and cannot be deleted.'); announce('Role deleted.'); await load(); }
-      catch(error) { announce(error.message,true); }
+    if(remove) {
+      pendingDeleteRole = remove.dataset.delete;
+      document.getElementById('confirm-role-message').textContent = `Delete role ${remove.dataset.delete}? This cannot be undone.`;
+      confirmRoleDialog.showModal();
+    }
+  });
+  confirmRoleDialog?.addEventListener('close', async () => {
+    if (confirmRoleDialog.returnValue !== 'confirm' || !pendingDeleteRole) return;
+    const roleToDelete = pendingDeleteRole;
+    pendingDeleteRole = null;
+    try {
+      const response = await fetch(`${apiBase}/roles/${encodeURIComponent(roleToDelete)}`, {method:'DELETE', headers:headers()});
+      if (!response.ok) throw new Error('This role may be assigned to users and cannot be deleted.');
+      announce('Role deleted.');
+      await load();
+    } catch(error) {
+      announce(error.message, true);
     }
   });
   form.addEventListener('submit',async event=>{
