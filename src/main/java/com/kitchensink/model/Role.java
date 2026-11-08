@@ -1,7 +1,6 @@
 package com.kitchensink.model;
 
 import com.kitchensink.validation.Validator;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -10,14 +9,14 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 /** Named permission bundle assigned to application users. */
+@SuppressWarnings("serial")
 @Document(collection = "roles")
-public class Role {
+public class Role extends BaseEntity {
   @Id private ObjectId id;
   private String name;
   private String description;
   private List<String> permissions;
   private boolean isSystem;
-  private Instant updatedAt;
 
   public ObjectId getId() {
     return id;
@@ -58,14 +57,6 @@ public class Role {
 
   public void setSystem(boolean system) {
     isSystem = system;
-  }
-
-  public Instant getUpdatedAt() {
-    return updatedAt;
-  }
-
-  public void setUpdatedAt(Instant updatedAt) {
-    this.updatedAt = updatedAt;
   }
 
   /** Validates role fields and the member-write permission dependency. */

@@ -56,7 +56,11 @@ public class RolePermissionService {
     if (user == null || !user.isActive()) {
       return new UserPermissions(false, Set.of());
     }
-    user.validate();
+    try {
+      user.validate();
+    } catch (com.kitchensink.validation.ValidationException ex) {
+      return new UserPermissions(false, Set.of());
+    }
     return new UserPermissions(true, permissionsFor(user.getRoles()));
   }
 

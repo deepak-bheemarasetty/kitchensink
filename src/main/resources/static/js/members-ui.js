@@ -41,17 +41,17 @@
   function memberActions(member) {
     const actions = [];
     if (canUpdate) actions.push(`<button type="button" class="small-action" data-edit="${member.id}">Edit</button>`);
-    if (canDelete) actions.push(`<button type="button" class="small-action delete" data-delete="${member.id}" data-name="${escapeHtml(member.firstName + ' ' + (member.lastName || ''))}">Delete</button>`);
+    if (canDelete) actions.push(`<button type="button" class="small-action delete" data-delete="${member.id}" data-name="${escapeHtml(member.name || (member.firstName + ' ' + (member.lastName || '')))}">Delete</button>`);
     return actions.length ? `<div class="row-actions">${actions.join('')}</div>` : '';
   }
   function memberRow(member) {
-    const name = escapeHtml(`${member.firstName} ${member.lastName || ''}`.trim());
+    const name = escapeHtml(member.name || `${member.firstName} ${member.lastName || ''}`.trim());
     const badge = `<span class="status-badge ${escapeHtml(member.status)}">${escapeHtml(member.status)}</span>`;
-    return `<tr><td><span class="member-name">${name}</span></td><td class="hide-medium">${escapeHtml(member.memberId)}</td><td>${escapeHtml(member.email)}</td><td class="hide-medium">${escapeHtml(member.phone)}</td><td>${badge}</td>${(canUpdate || canDelete) ? `<td>${memberActions(member)}</td>` : ''}</tr>`;
+    return `<tr><td><span class="member-name">${name}</span></td><td class="hide-medium">${escapeHtml(member.memberId)}</td><td>${escapeHtml(member.email)}</td><td class="hide-medium">${escapeHtml(member.phone || '')}</td><td>${badge}</td>${(canUpdate || canDelete) ? `<td>${memberActions(member)}</td>` : ''}</tr>`;
   }
   function memberCard(member) {
-    const name = escapeHtml(`${member.firstName} ${member.lastName || ''}`.trim());
-    return `<article class="member-card"><div class="member-card-top"><strong class="member-name">${name}</strong><span class="status-badge ${escapeHtml(member.status)}">${escapeHtml(member.status)}</span></div><span class="member-meta">${escapeHtml(member.memberId)}</span><span class="member-email">${escapeHtml(member.email)}</span><span class="member-phone">${escapeHtml(member.phone)}</span>${memberActions(member)}</article>`;
+    const name = escapeHtml(member.name || `${member.firstName} ${member.lastName || ''}`.trim());
+    return `<article class="member-card"><div class="member-card-top"><strong class="member-name">${name}</strong><span class="status-badge ${escapeHtml(member.status)}">${escapeHtml(member.status)}</span></div><span class="member-meta">${escapeHtml(member.memberId)}</span><span class="member-email">${escapeHtml(member.email)}</span><span class="member-phone">${escapeHtml(member.phone || '')}</span>${memberActions(member)}</article>`;
   }
   async function load(reset = false) {
     if (loading) return;
@@ -99,7 +99,8 @@
     document.getElementById('firstName').value = member?.firstName || '';
     document.getElementById('lastName').value = member?.lastName || '';
     document.getElementById('email').value = member?.email || '';
-    document.getElementById('phone').value = member?.phone || '';
+    document.getElementById('phone').value = member?.rawPhone || member?.phone || '';
+    document.getElementById('countryCode').value = member?.countryCode || '';
     document.getElementById('member-status').value = member?.status || 'active';
     document.querySelector('.status-field').classList.toggle('sr-only', !member);
     document.getElementById('drawer-title').textContent = member ? 'Edit member' : 'Add member';
@@ -148,13 +149,15 @@
     payload.lastName = payload.lastName.trim();
     payload.email = payload.email.trim().toLowerCase();
     payload.phone = payload.phone.trim();
+    payload.countryCode = payload.countryCode.trim();
+    if (!payload.countryCode) delete payload.countryCode;
     if (!id) delete payload.status;
     else payload.version = Number(document.getElementById('member-version').value);
     const submit = form.querySelector('[type="submit"]');
     submit.disabled = true; submit.textContent = 'Saving…';
     try {
       const requestHeaders = headers(true);
-      if (!id) requestHeaders['Idempotency-Key'] = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      if (!id) requestHeaders['Idempotency-Key'] = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
       const response = await fetch(id ? `${apiBase}/members/${encodeURIComponent(id)}` : `${apiBase}/members`, {
         method:id ? 'PATCH' : 'POST', headers:requestHeaders, body:JSON.stringify(payload)
       });
@@ -162,7 +165,8 @@
       if (!response.ok) {
         const errorBody = body?.error || body;
         if (errorBody?.fields) errorBody.fields.forEach(field => {
-          const target = form.querySelector(`[data-error="${field.field}"]`);
+          const fieldSelector = window.CSS && CSS.escape ? `[data-error="${CSS.escape(field.field)}"]` : `[data-error="${field.field}"]`;
+          const target = form.querySelector(fieldSelector);
           if (target) target.textContent = field.message;
         });
         throw new Error(response.status === 409 ? 'This member changed since you opened the form. Reload the latest record and try again.' : errorBody?.message || 'Could not save the member. Check the fields and try again.');
@@ -177,7 +181,12 @@
       const response = await fetch(`${apiBase}/members/${encodeURIComponent(pendingDelete)}`, {method:'DELETE',headers:headers()});
       if (!response.ok) throw new Error('Could not delete this member. Refresh the page and try again.');
       deletedMemberId = pendingDelete;
-      notice.innerHTML = 'Member deleted. <button type="button" class="undo-button">Undo</button>';
+      notice.textContent = 'Member deleted. ';
+      const undoBtn = document.createElement('button');
+      undoBtn.type = 'button';
+      undoBtn.className = 'undo-button';
+      undoBtn.textContent = 'Undo';
+      notice.appendChild(undoBtn);
       notice.hidden = false;
       await load(true);
     } catch (error) { showNotice(error.message, true); }

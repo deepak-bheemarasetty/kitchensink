@@ -27,10 +27,26 @@ public class RequestIdFilter extends OncePerRequestFilter {
             : UUID.randomUUID().toString();
     response.setHeader("X-Request-ID", requestId);
     MDC.put("requestId", requestId);
+    String clientIp = resolveClientIp(request);
+    MDC.put("clientIp", clientIp);
     try {
       chain.doFilter(request, response);
     } finally {
       MDC.remove("requestId");
+      MDC.remove("clientIp");
     }
+  }
+
+  private String resolveClientIp(HttpServletRequest request) {
+    String forwardedHeader = request.getHeader("X-Forwarded-For");
+    if (forwardedHeader != null && !forwardedHeader.isBlank()) {
+      String[] parts = forwardedHeader.split(",");
+      String rightmostIp = parts[parts.length - 1].trim();
+      if (!rightmostIp.isEmpty() && rightmostIp.length() <= 64) {
+        return rightmostIp;
+      }
+    }
+    String remoteAddr = request.getRemoteAddr();
+    return remoteAddr != null && remoteAddr.length() <= 64 ? remoteAddr : "unknown";
   }
 }

@@ -1,5 +1,6 @@
 package com.kitchensink.controller;
 
+import com.kitchensink.service.IdentityResolver;
 import java.util.List;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -8,6 +9,12 @@ import org.springframework.web.bind.annotation.RestController;
 /** Returns the authenticated user's effective permissions for the client UI. */
 @RestController
 public class CurrentUserController {
+  private final IdentityResolver identityResolver;
+
+  public CurrentUserController(IdentityResolver identityResolver) {
+    this.identityResolver = identityResolver;
+  }
+
   /**
    * Retrieves the current authenticated user and their effective permissions.
    *
@@ -22,7 +29,8 @@ public class CurrentUserController {
             .filter(value -> value.startsWith("member:") || value.endsWith(":manage"))
             .sorted()
             .toList();
-    return new CurrentUserResponse(authentication.getName(), permissions);
+    String username = identityResolver.resolveIdentity(authentication);
+    return new CurrentUserResponse(username, permissions);
   }
 
   /** Response representation for the current authenticated user and permissions. */

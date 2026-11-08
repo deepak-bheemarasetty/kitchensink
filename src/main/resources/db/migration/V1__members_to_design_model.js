@@ -1,4 +1,4 @@
-// Run from the repository root with: mongosh "$MONGODB_URI" scripts/migrate-members-v1.js
+// Run from the repository root with: mongosh "$MONGODB_URI" src/main/resources/db/migration/V1__members_to_design_model.js
 const collection = db.getCollection("members");
 const legacy = collection.find({ name: { $exists: true } }).toArray();
 const emailOwners = new Map();
@@ -21,10 +21,23 @@ for (const old of legacy) {
   }
   emailOwners.set(emailLower, old._id);
 
-  const rawDigits = String(old.phoneNumber || "").replace(/\D/g, "");
-  const countryCode = old.countryCode == null ? "" : String(old.countryCode);
-  const phoneDigits = rawDigits.startsWith(countryCode) && countryCode ? rawDigits : `${countryCode}${rawDigits}`;
-  const phone = /^[1-9][0-9]{7,14}$/.test(phoneDigits) ? `+${phoneDigits}` : null;
+  // Extract digits for phone and countryCode
+  const rawDigits = String(old.phoneNumber || old.phone || "").replace(/\D/g, "");
+  let rawCc = old.countryCode == null ? "" : String(old.countryCode).replace(/\D/g, "");
+  let phone = rawDigits;
+
+  // If phone starts with 0, strip leading zeros
+  phone = phone.replace(/^0+/, "");
+
+  if (rawCc && phone.startsWith(rawCc)) {
+    phone = phone.slice(rawCc.length);
+  }
+  if (!/^[1-9][0-9]{5,13}$/.test(phone)) {
+    errors.push({ id: old._id, reason: `invalid phone number digits: ${phone}` });
+    continue;
+  }
+  const countryCode = rawCc && /^[0-9]{1,4}$/.test(rawCc) ? rawCc : null;
+
   const createdAt = old.creationDate || new Date();
   const actorId = new ObjectId("000000000000000000000000");
   prepared.push({
@@ -37,6 +50,7 @@ for (const old of legacy) {
       fullNameLower: `${firstName} ${lastName}`.trim().toLowerCase(),
       email,
       emailLower,
+      countryCode,
       phone,
       status: "active",
       createdAt,
@@ -78,12 +92,13 @@ db.runCommand({
       properties: {
         _id: { bsonType: "objectId" },
         memberId: { bsonType: "string", minLength: 3, maxLength: 20, pattern: "^[A-Z0-9-]+$" },
-        firstName: { bsonType: "string", minLength: 1, maxLength: 50 },
-        lastName: { bsonType: "string", maxLength: 50 },
-        fullNameLower: { bsonType: "string", maxLength: 101 },
+        firstName: { bsonType: "string", minLength: 1, maxLength: 60 },
+        lastName: { bsonType: "string", maxLength: 60 },
+        fullNameLower: { bsonType: "string", maxLength: 121 },
         email: { bsonType: "string", minLength: 3, maxLength: 254 },
         emailLower: { bsonType: "string", minLength: 3, maxLength: 254 },
-        phone: { bsonType: "string", pattern: "^[+][1-9][0-9]{7,14}$" },
+        countryCode: { bsonType: ["string", "null"], pattern: "^[0-9]{1,4}$" },
+        phone: { bsonType: "string", pattern: "^[1-9][0-9]{5,13}$" },
         status: { bsonType: "string", enum: ["active", "inactive"] },
         createdAt: { bsonType: "date" },
         createdBy: { bsonType: ["objectId", "null"] },
@@ -95,9 +110,6 @@ db.runCommand({
       }
     }
   },
-  // Keep inserts and valid-document updates checked while allowing legacy invalid rows to be repaired or soft-deleted.
   validationLevel: "moderate",
   validationAction: "error"
 });
-
-printjson({ migrated: prepared.length, rejected: [] });

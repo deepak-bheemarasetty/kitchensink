@@ -1,12 +1,11 @@
 package com.kitchensink.config;
 
+import com.kitchensink.service.IdentityResolver;
 import com.kitchensink.service.RolePermissionService;
 import org.springframework.security.authorization.AuthorizationDecision;
 import org.springframework.security.authorization.AuthorizationManager;
 import org.springframework.security.authorization.AuthorizationResult;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 import org.springframework.stereotype.Component;
 
@@ -15,9 +14,12 @@ import org.springframework.stereotype.Component;
 public class CurrentPermissionAuthorizationManager
     implements AuthorizationManager<RequestAuthorizationContext> {
   private final RolePermissionService permissionService;
+  private final IdentityResolver identityResolver;
 
-  public CurrentPermissionAuthorizationManager(RolePermissionService permissionService) {
+  public CurrentPermissionAuthorizationManager(
+      RolePermissionService permissionService, IdentityResolver identityResolver) {
     this.permissionService = permissionService;
+    this.identityResolver = identityResolver;
   }
 
   @Override
@@ -28,28 +30,24 @@ public class CurrentPermissionAuthorizationManager
     if (current == null || !current.isAuthenticated()) {
       return new AuthorizationDecision(false);
     }
-    String username = current.getName();
-    if (current instanceof OAuth2AuthenticationToken oauth) {
-      String email = oauth.getPrincipal().getAttribute("email");
-      if (email != null) {
-        username = email;
-      }
-    } else if (current instanceof JwtAuthenticationToken jwt) {
-      String email = jwt.getToken().getClaimAsString("email");
-      if (email != null) {
-        username = email;
-      }
-    }
-    RolePermissionService.UserPermissions user = permissionService.user(username);
+    String identity = identityResolver.resolveIdentity(current);
+    RolePermissionService.UserPermissions user = permissionService.user(identity);
     String path =
         context
             .getRequest()
             .getRequestURI()
             .substring(context.getRequest().getContextPath().length());
-    String required =
-        path.startsWith("/users")
-            ? "user:manage"
-            : path.startsWith("/roles") ? "role:manage" : "member:view";
+    String required;
+    if (path.equals("/") || path.startsWith("/members")) {
+      required = "member:view";
+    } else if (path.startsWith("/users")) {
+      required = "user:manage";
+    } else if (path.startsWith("/roles")) {
+      required = "role:manage";
+    } else {
+      // Deny by default for any unspecified path protected by this manager
+      return new AuthorizationDecision(false);
+    }
     return new AuthorizationDecision(user.active() && user.permissions().contains(required));
   }
 }

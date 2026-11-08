@@ -10,6 +10,7 @@ public final class MemberRequest {
   private String firstName;
   private String lastName;
   private String email;
+  private String countryCode;
   private String phone;
 
   private MemberRequest() {}
@@ -28,11 +29,13 @@ public final class MemberRequest {
       @JsonProperty("firstName") String firstName,
       @JsonProperty("lastName") String lastName,
       @JsonProperty("email") String email,
+      @JsonProperty("countryCode") String countryCode,
       @JsonProperty("phone") String phone) {
     MemberRequest request = new MemberRequest();
     request.firstName = firstName;
     request.lastName = lastName;
     request.email = email;
+    request.countryCode = countryCode;
     request.phone = phone;
     return request;
   }
@@ -46,6 +49,7 @@ public final class MemberRequest {
     firstName = Validator.firstName(firstName);
     lastName = Validator.lastName(lastName);
     email = Validator.email(email);
+    countryCode = Validator.countryCode(countryCode);
     phone = Validator.phone(phone);
   }
 
@@ -75,6 +79,14 @@ public final class MemberRequest {
 
   public String getPhone() {
     return phone;
+  }
+
+  public String getCountryCode() {
+    return countryCode;
+  }
+
+  public void setCountryCode(String countryCode) {
+    this.countryCode = countryCode;
   }
 
   public void setPhone(String phone) {
