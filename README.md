@@ -48,49 +48,154 @@ Get-Service MongoDB
 
 On macOS installed with Homebrew, use `brew services start mongodb-community@8.0`. On Linux systems using systemd, use `sudo systemctl start mongod` and check status with `sudo systemctl status mongod`.
 
-### MongoDB Replica Set Configuration & Restart (Required for Transactions)
+### MongoDB Replica Set Configuration, Verification & Restart (Required for Transactions)
 
-The application uses multi-document Spring Data MongoDB transactions (`@Transactional`), which require MongoDB to run as a **replica set** (`rs0`).
+The application uses multi-document Spring Data MongoDB transactions (`@Transactional`), which strictly require MongoDB to run as a **replica set** (e.g. name `rs0`). Single standalone mongod instances will fail with `Command failed with error 20 (IllegalOperation): Transaction numbers are only allowed on a replica set member or mongos`.
 
-#### 1. Enable Replica Set in MongoDB Configuration
-Locate your `mongod.cfg` (Windows) or `mongod.conf` (Linux/macOS):
-- Windows default: `C:\Program Files\MongoDB\Server\8.0\bin\mongod.cfg`
-- Linux default: `/etc/mongod.conf`
-- macOS default: `/opt/homebrew/etc/mongod.conf`
+Follow these step-by-step instructions:
 
-Add the `replication` section:
-```yaml
-replication:
-  replSetName: "rs0"
-```
+---
 
-#### 2. Restart MongoDB Service
-- **Windows (PowerShell as Admin):**
-  ```powershell
-  Restart-Service MongoDB
-  Get-Service MongoDB
-  ```
-- **Linux (systemd):**
-  ```bash
-  sudo systemctl restart mongod
-  sudo systemctl status mongod
-  ```
-- **macOS (Homebrew):**
-  ```bash
-  brew services restart mongodb-community@8.0
-  ```
+#### 1. Check if Replication is Enabled
 
-#### 3. Initiate the Replica Set
-Connect via `mongosh` once restarted and initiate the replica set:
+Open your terminal and run `mongosh`:
+
 ```shell
-mongosh --eval 'rs.initiate()'
+mongosh --eval "rs.status()"
 ```
-Verify status by checking `rs.status().ok` returns `1`.
 
-If connecting using a replica set connection string in `.env`, specify `replicaSet=rs0`:
-```dotenv
-MONGODB_URI=mongodb://localhost:27017/kitchensink?replicaSet=rs0
+- **If replication is NOT enabled**, it will output:
+  ```json
+  MongoServerError[NoReplicationEnabled]: not running with --replSet
+  ```
+- **If replication IS already enabled and initialized**, it will output JSON containing:
+  ```json
+  "set": "rs0",
+  "ok": 1,
+  "members": [ ... ]
+  ```
+  and the prompt in `mongosh` will show `rs0 [direct: primary]>`.
+
+You can also run a quick one-liner to get a boolean check:
+```shell
+mongosh --quiet --eval "try { print('Replication Active:', rs.status().ok === 1); } catch(e) { print('Replication Active: false (No replication enabled)'); }"
 ```
+
+---
+
+#### 2. How to Enable Replication
+
+You can enable replication either via configuration file (`mongod.cfg` / `mongod.conf`) or directly via terminal flags.
+
+##### Option A: From Configuration File (Recommended for System Services)
+
+1. Locate the MongoDB configuration file:
+   - **Windows**: `C:\Program Files\MongoDB\Server\8.0\bin\mongod.cfg` (or matching version directory)
+   - **Linux (Ubuntu/Debian/RHEL)**: `/etc/mongod.conf`
+   - **macOS (Homebrew Apple Silicon)**: `/opt/homebrew/etc/mongod.conf`
+   - **macOS (Homebrew Intel)**: `/usr/local/etc/mongod.conf`
+
+2. Open the file in an administrative / root text editor (e.g., Notepad as Administrator on Windows, or `sudo nano /etc/mongod.conf` on Linux).
+
+3. Add or uncomment the `replication` section (ensure valid YAML indentation with 2 spaces):
+   ```yaml
+   replication:
+     replSetName: "rs0"
+   ```
+
+4. Save the file.
+
+##### Option B: From the Terminal (CLI Command Line)
+
+If you run MongoDB standalone in a terminal (outside system services) or for temporary local testing, pass `--replSet rs0`:
+
+- **Windows PowerShell**:
+  ```powershell
+  & "C:\Program Files\MongoDB\Server\8.0\bin\mongod.exe" --dbpath "C:\data\db" --replSet rs0
+  ```
+- **Linux / macOS**:
+  ```bash
+  mongod --dbpath /var/lib/mongodb --replSet rs0
+  ```
+
+---
+
+#### 3. How to Restart MongoDB
+
+Restart the service so it loads the new replica set configuration.
+
+##### Windows
+Open PowerShell as **Administrator**:
+```powershell
+# Check current status
+Get-Service MongoDB
+
+# Restart the service
+Restart-Service MongoDB
+
+# Verify it is running
+Get-Service MongoDB
+```
+
+*Alternative via Command Prompt (Administrator):*
+```cmd
+net stop MongoDB
+net start MongoDB
+```
+
+##### Linux (systemd)
+```bash
+# Restart the daemon
+sudo systemctl restart mongod
+
+# Verify service is running active
+sudo systemctl status mongod
+```
+
+##### macOS (Homebrew)
+```bash
+# Restart the service
+brew services restart mongodb-community@8.0
+
+# Verify status
+brew services list
+```
+
+---
+
+#### 4. Initiate and Verify the Replica Set in `mongosh`
+
+Once MongoDB is running with `--replSet rs0` or `replSetName: "rs0"`, initiate the replica set (this only needs to be run once per database instance):
+
+1. Connect with `mongosh`:
+   ```shell
+   mongosh
+   ```
+
+2. Run `rs.initiate()`:
+   ```javascript
+   rs.initiate()
+   ```
+   Expected response:
+   ```json
+   { "ok": 1 }
+   ```
+   *(Note: If it returns `{ "ok": 0, "errmsg": "already initialized" }`, the replica set is already initialized and good to go).*
+
+3. Verify status:
+   ```javascript
+   rs.status().members[0].stateStr
+   ```
+   Wait 1-2 seconds until it transitions to:
+   ```
+   'PRIMARY'
+   ```
+
+4. Verify your `.env` connection string:
+   Ensure your `.env` connects to the replica set:
+   ```dotenv
+   MONGODB_URI=mongodb://localhost:27017/kitchensink?replicaSet=rs0
+   ```
 
 Use a fresh `kitchensink` database for this version. The application installs MongoDB schema validation on startup.
 
