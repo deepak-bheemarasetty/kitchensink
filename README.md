@@ -48,10 +48,62 @@ Get-Service MongoDB
 
 On macOS installed with Homebrew, use `brew services start mongodb-community@8.0`. On Linux systems using systemd, use `sudo systemctl start mongod` and check status with `sudo systemctl status mongod`.
 
-Use a fresh `kitchensink` database for this version; the member `_id` is now a numeric sequence and existing ObjectId-based member records are not migrated. The application installs MongoDB schema validation on startup. For an unauthenticated local development database only, seed 75 sample members from the project root; the script includes required audit fields and initializes the sequence counter:
+### MongoDB Replica Set Configuration & Restart (Required for Transactions)
+
+The application uses multi-document Spring Data MongoDB transactions (`@Transactional`), which require MongoDB to run as a **replica set** (`rs0`).
+
+#### 1. Enable Replica Set in MongoDB Configuration
+Locate your `mongod.cfg` (Windows) or `mongod.conf` (Linux/macOS):
+- Windows default: `C:\Program Files\MongoDB\Server\8.0\bin\mongod.cfg`
+- Linux default: `/etc/mongod.conf`
+- macOS default: `/opt/homebrew/etc/mongod.conf`
+
+Add the `replication` section:
+```yaml
+replication:
+  replSetName: "rs0"
+```
+
+#### 2. Restart MongoDB Service
+- **Windows (PowerShell as Admin):**
+  ```powershell
+  Restart-Service MongoDB
+  Get-Service MongoDB
+  ```
+- **Linux (systemd):**
+  ```bash
+  sudo systemctl restart mongod
+  sudo systemctl status mongod
+  ```
+- **macOS (Homebrew):**
+  ```bash
+  brew services restart mongodb-community@8.0
+  ```
+
+#### 3. Initiate the Replica Set
+Connect via `mongosh` once restarted and initiate the replica set:
+```shell
+mongosh --eval 'rs.initiate()'
+```
+Verify status by checking `rs.status().ok` returns `1`.
+
+If connecting using a replica set connection string in `.env`, specify `replicaSet=rs0`:
+```dotenv
+MONGODB_URI=mongodb://localhost:27017/kitchensink?replicaSet=rs0
+```
+
+Use a fresh `kitchensink` database for this version. The application installs MongoDB schema validation on startup.
+
+To seed the initial application roles and users (matching the Auth0 users list in `documentation/users.json`), run:
 
 ```shell
-mongosh "mongodb://localhost:27017/kitchensink" scripts/seed-members.js
+mongosh "mongodb://localhost:27017/kitchensink" scripts/seed-users-and-roles.js
+```
+
+To seed sample member records for local development:
+
+```shell
+mongosh "mongodb://localhost:27017/kitchensink" scripts/reset-and-seed-members.js
 ```
 
 The application defaults to `mongodb://localhost:27017/kitchensink` and is available at `http://localhost:9080/kitchensink`. To customize local settings, copy `.env.example` to `.env` and edit the values:
