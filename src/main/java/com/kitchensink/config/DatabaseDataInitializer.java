@@ -16,6 +16,8 @@ import org.springframework.stereotype.Component;
 /**
  * Automatically initializes standard application roles and default admin user accounts in MongoDB
  * on application startup if they are not already present.
+ *
+ * @author Deepak Bheemarasetty
  */
 @Component
 public class DatabaseDataInitializer implements ApplicationRunner {

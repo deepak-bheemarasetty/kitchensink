@@ -11,7 +11,11 @@ import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 
-/** Resolves effective permissions from the application's roles collection. */
+/**
+ * Resolves effective permissions from the application's roles collection.
+ *
+ * @author Deepak Bheemarasetty
+ */
 @Service
 public class RolePermissionService {
   private final MongoTemplate mongoTemplate;

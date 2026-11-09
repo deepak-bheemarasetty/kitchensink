@@ -1,6 +1,10 @@
 package com.kitchensink.validation;
 
-/** A field-specific validation failure used for consistent API error responses. */
+/**
+ * A field-specific validation failure used for consistent API error responses.
+ *
+ * @author Deepak Bheemarasetty
+ */
 public class ValidationException extends RuntimeException {
   private final String field;
 

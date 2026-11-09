@@ -16,7 +16,11 @@ import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 
-/** Configures MongoDB mapping, transactions, and authenticated actor auditing. */
+/**
+ * Configures MongoDB mapping, transactions, and authenticated actor auditing.
+ *
+ * @author Deepak Bheemarasetty
+ */
 @Configuration
 @EnableMongoAuditing
 public class MongoConfiguration {

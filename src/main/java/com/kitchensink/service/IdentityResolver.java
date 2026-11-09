@@ -12,7 +12,11 @@ import org.springframework.security.oauth2.client.authentication.OAuth2Authentic
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Component;
 
-/** Resolves normalized user identities and ObjectId references across authentication types. */
+/**
+ * Resolves normalized user identities and ObjectId references across authentication types.
+ *
+ * @author Deepak Bheemarasetty
+ */
 @Component
 public class IdentityResolver {
   private final MongoTemplate mongoTemplate;

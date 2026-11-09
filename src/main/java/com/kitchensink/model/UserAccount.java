@@ -9,7 +9,11 @@ import org.bson.types.ObjectId;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
-/** Application login account, separate from directory members. */
+/**
+ * Application login account, separate from directory members.
+ *
+ * @author Deepak Bheemarasetty
+ */
 @SuppressWarnings("serial")
 @Document(collection = "users")
 public class UserAccount extends BaseEntity {

@@ -5,7 +5,11 @@ import java.util.Optional;
 import org.bson.types.ObjectId;
 import org.springframework.data.mongodb.repository.MongoRepository;
 
-/** Persistence operations for members. */
+/**
+ * Persistence operations for members.
+ *
+ * @author Deepak Bheemarasetty
+ */
 public interface MemberRepository extends MongoRepository<Member, ObjectId> {
   Optional<Member> findByEmail(String email);
 

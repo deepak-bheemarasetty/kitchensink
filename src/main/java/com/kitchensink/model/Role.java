@@ -8,7 +8,11 @@ import org.bson.types.ObjectId;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
-/** Named permission bundle assigned to application users. */
+/**
+ * Named permission bundle assigned to application users.
+ *
+ * @author Deepak Bheemarasetty
+ */
 @SuppressWarnings("serial")
 @Document(collection = "roles")
 public class Role extends BaseEntity {

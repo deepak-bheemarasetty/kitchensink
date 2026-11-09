@@ -7,7 +7,11 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
 
-/** Tests Auth0 client registration configuration. */
+/**
+ * Tests Auth0 client registration configuration.
+ *
+ * @author Deepak Bheemarasetty
+ */
 class SecurityConfigurationTest {
   @Test
   void clientRegistrationAddsTrailingSlashToIssuerWhenMissing() {

@@ -6,7 +6,11 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Returns the authenticated user's effective permissions for the client UI. */
+/**
+ * Returns the authenticated user's effective permissions for the client UI.
+ *
+ * @author Deepak Bheemarasetty
+ */
 @RestController
 public class CurrentUserController {
   private final IdentityResolver identityResolver;

@@ -5,7 +5,11 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.kitchensink.validation.Validator;
 
-/** Member fields accepted from a create request. */
+/**
+ * Member fields accepted from a create request.
+ *
+ * @author Deepak Bheemarasetty
+ */
 public final class MemberRequest {
   private String firstName;
   private String lastName;

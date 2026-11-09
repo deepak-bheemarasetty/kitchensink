@@ -4,7 +4,11 @@ import java.io.Serializable;
 import java.time.Instant;
 import org.bson.types.ObjectId;
 
-/** Base entity providing standard auditing and versioning metadata. */
+/**
+ * Base entity providing standard auditing and versioning metadata.
+ *
+ * @author Deepak Bheemarasetty
+ */
 @SuppressWarnings("serial")
 public abstract class BaseEntity implements Serializable {
   private Instant createdAt;

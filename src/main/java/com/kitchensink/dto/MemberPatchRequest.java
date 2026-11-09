@@ -3,7 +3,11 @@ package com.kitchensink.dto;
 import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.kitchensink.validation.Validator;
 
-/** Editable member fields and the version observed by the client. */
+/**
+ * Editable member fields and the version observed by the client.
+ *
+ * @author Deepak Bheemarasetty
+ */
 public class MemberPatchRequest {
   private Integer version;
   private String firstName;

@@ -5,7 +5,11 @@ import org.bson.types.ObjectId;
 import tools.jackson.databind.annotation.JsonSerialize;
 import tools.jackson.databind.ser.std.ToStringSerializer;
 
-/** Member response projection for API and UI consumers. */
+/**
+ * Member response projection for API and UI consumers.
+ *
+ * @author Deepak Bheemarasetty
+ */
 public final class MemberResponse {
   private final ObjectId id;
   private final String memberId;

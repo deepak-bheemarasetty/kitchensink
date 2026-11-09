@@ -8,7 +8,11 @@ import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 
-/** Serves the simple, server-rendered member and account workspaces. */
+/**
+ * Serves the simple, server-rendered member and account workspaces.
+ *
+ * @author Deepak Bheemarasetty
+ */
 @Controller
 public class MemberViewController {
   private final MongoTemplate mongoTemplate;

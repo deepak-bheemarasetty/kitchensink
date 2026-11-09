@@ -30,7 +30,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
-/** Applies member normalization and persists directory records. */
+/**
+ * Applies member normalization and persists directory records.
+ *
+ * @author Deepak Bheemarasetty
+ */
 @Service
 public class MemberService {
   private final MemberRepository memberRepository;

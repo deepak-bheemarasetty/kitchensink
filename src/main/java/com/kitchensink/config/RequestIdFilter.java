@@ -11,7 +11,11 @@ import org.slf4j.MDC;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
-/** Adds a safe request ID to every response and the structured logging context. */
+/**
+ * Adds a safe request ID to every response and the structured logging context.
+ *
+ * @author Deepak Bheemarasetty
+ */
 @Component
 public class RequestIdFilter extends OncePerRequestFilter {
   private static final Pattern SAFE_ID = Pattern.compile("[A-Za-z0-9._-]{1,128}");

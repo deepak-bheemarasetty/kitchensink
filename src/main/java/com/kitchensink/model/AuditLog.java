@@ -8,7 +8,11 @@ import java.util.Map;
 import org.bson.types.ObjectId;
 import org.springframework.data.annotation.Id;
 
-/** Immutable history record for security and member changes. */
+/**
+ * Immutable history record for security and member changes.
+ *
+ * @author Deepak Bheemarasetty
+ */
 @org.springframework.data.mongodb.core.mapping.Document(collection = "audit_logs")
 public class AuditLog {
   @Id private ObjectId id;

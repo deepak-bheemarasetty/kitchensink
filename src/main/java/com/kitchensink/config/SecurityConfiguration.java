@@ -36,7 +36,11 @@ import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.SimpleUrlAuthenticationSuccessHandler;
 import org.springframework.security.web.util.matcher.RequestMatcher;
 
-/** Configures OIDC browser login and stateless JWT authentication for the API. */
+/**
+ * Configures OIDC browser login and stateless JWT authentication for the API.
+ *
+ * @author Deepak Bheemarasetty
+ */
 @Configuration
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 @EnableWebSecurity

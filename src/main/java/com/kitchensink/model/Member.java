@@ -8,7 +8,11 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import tools.jackson.databind.annotation.JsonSerialize;
 import tools.jackson.databind.ser.std.ToStringSerializer;
 
-/** Member directory record. */
+/**
+ * Member directory record.
+ *
+ * @author Deepak Bheemarasetty
+ */
 @SuppressWarnings("serial")
 @Document(collection = "members")
 public class Member extends BaseEntity {

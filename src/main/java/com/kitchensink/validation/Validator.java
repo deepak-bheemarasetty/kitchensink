@@ -11,7 +11,11 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Pattern;
 
-/** Single source of application field and persistence-model validation rules. */
+/**
+ * Single source of application field and persistence-model validation rules.
+ *
+ * @author Deepak Bheemarasetty
+ */
 public final class Validator {
   private static final Pattern NAME = Pattern.compile("(?U)^[\\p{L}\\p{M}][\\p{L}\\p{M} .'-]*$");
   private static final Pattern EMAIL =

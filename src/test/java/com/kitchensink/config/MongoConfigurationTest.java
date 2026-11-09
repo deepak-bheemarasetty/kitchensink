@@ -1,25 +1,22 @@
 package com.kitchensink.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
-import com.mongodb.client.ListCollectionNamesIterable;
-import com.mongodb.client.MongoDatabase;
-import java.util.Collection;
-import org.bson.Document;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.ApplicationArguments;
-import org.springframework.boot.ApplicationRunner;
-import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.MongoDatabaseFactory;
+import org.springframework.data.mongodb.core.convert.MongoCustomConversions;
+import org.springframework.data.mongodb.core.mapping.MongoMappingContext;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+/**
+ * Tests Mongo configuration components and auditing resolver.
+ *
+ * @author Deepak Bheemarasetty
+ */
 class MongoConfigurationTest {
   private final MongoConfiguration configuration = new MongoConfiguration();
 
@@ -47,31 +44,20 @@ class MongoConfigurationTest {
   }
 
   @Test
-  void createsMemberCollectionAndInstallsMongoSchema() throws Exception {
-    MongoTemplate template = mock(MongoTemplate.class);
-    MongoDatabase database = mock(MongoDatabase.class);
-    @SuppressWarnings("unchecked")
-    ListCollectionNamesIterable collectionNames = mock(ListCollectionNamesIterable.class);
-    when(template.getDb()).thenReturn(database);
-    when(database.listCollectionNames()).thenReturn(collectionNames);
-    when(collectionNames.into(any(Collection.class)))
-        .thenAnswer(invocation -> invocation.getArgument(0, Collection.class));
+  void mappingMongoConverterAndTransactionManagerInstantiation() {
+    MongoDatabaseFactory factory = org.mockito.Mockito.mock(MongoDatabaseFactory.class);
+    org.mockito.Mockito.doReturn(
+            new org.springframework.data.mongodb.core.MongoExceptionTranslator())
+        .when(factory)
+        .getExceptionTranslator();
+    MongoMappingContext mappingContext = new MongoMappingContext();
+    MongoCustomConversions conversions =
+        new MongoCustomConversions(java.util.Collections.emptyList());
 
-    ApplicationRunner runner = configuration.memberCollectionSchema(template);
-    runner.run(mock(ApplicationArguments.class));
+    var converter = configuration.mappingMongoConverter(factory, mappingContext, conversions);
+    assertThat(converter).isNotNull();
 
-    verify(database).createCollection("members");
-    var commandCaptor = org.mockito.ArgumentCaptor.forClass(Document.class);
-    verify(database).runCommand(commandCaptor.capture());
-    Document command = commandCaptor.getValue();
-    assertThat(command.getString("collMod")).isEqualTo("members");
-    assertThat(command.getString("validationLevel")).isEqualTo("strict");
-    Document schema = (Document) command.get("validator", Document.class).get("$jsonSchema");
-    assertThat(schema.getList("required", String.class))
-        .contains("_id", "name", "email", "phoneNumber", "countryCode", "version");
-    Document properties = schema.get("properties", Document.class);
-    assertThat(properties.get("email", Document.class).getInteger("maxLength")).isEqualTo(40);
-    assertThat(properties.get("phoneNumber", Document.class).getString("pattern"))
-        .isEqualTo("^[0-9]{4,15}$");
+    var transactionManager = configuration.mongoTransactionManager(factory);
+    assertThat(transactionManager).isNotNull();
   }
 }

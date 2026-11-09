@@ -28,7 +28,11 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
-/** REST API for searching and managing members. */
+/**
+ * REST API for searching and managing members.
+ *
+ * @author Deepak Bheemarasetty
+ */
 @RestController
 @RequestMapping("/api/v1/members")
 public class MemberController {

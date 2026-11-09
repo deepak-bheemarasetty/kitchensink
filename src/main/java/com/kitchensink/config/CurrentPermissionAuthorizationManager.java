@@ -9,7 +9,11 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 import org.springframework.stereotype.Component;
 
-/** Rechecks the local account and current role permissions for each browser request. */
+/**
+ * Rechecks the local account and current role permissions for each browser request.
+ *
+ * @author Deepak Bheemarasetty
+ */
 @Component
 public class CurrentPermissionAuthorizationManager
     implements AuthorizationManager<RequestAuthorizationContext> {
