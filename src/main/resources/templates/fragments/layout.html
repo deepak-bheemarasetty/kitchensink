@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head th:fragment="head(title, scriptSrc)">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="csrf-token" th:content="${_csrf.token}">
+  <meta name="csrf-header" th:content="${_csrf.headerName}">
+  <meta name="api-base" th:content="@{/api/v1}">
+  <title th:text="${title} + ' | Kitchensink'">Kitchensink</title>
+  <link rel="stylesheet" th:href="@{/css/styles.css}">
+  <script defer th:if="${scriptSrc != null}" th:src="@{${scriptSrc}}"></script>
+</head>
+<body>
+
+  <!-- Top bar header fragment -->
+  <header th:fragment="topbar" class="topbar">
+    <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="primary-nav">
+      ☰ <span class="sr-only">Open navigation</span>
+    </button>
+    <div class="brand"><span class="brand-mark">K</span> Kitchensink</div>
+    <div class="profile">
+      <span class="avatar" aria-hidden="true" th:text="${#strings.substring(username,0,1).toUpperCase()}">U</span>
+      <span class="profile-name" th:text="${username}">user</span>
+      <form th:action="@{/logout}" method="post">
+        <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+        <button class="text-button" type="submit">Sign out</button>
+      </form>
+    </div>
+  </header>
+
+  <!-- Sidebar navigation fragment -->
+  <nav th:fragment="sidebar(activeTab)" id="primary-nav" class="sidebar" aria-label="Primary navigation">
+    <a class="nav-link" th:classappend="${activeTab == 'members'} ? 'active'"
+       th:if="${permissions != null and permissions.contains('member:view')}" th:href="@{/members}">Members</a>
+    <a class="nav-link" th:classappend="${activeTab == 'users'} ? 'active'"
+       th:if="${canManageUsers}" th:href="@{/users}">Users</a>
+    <a class="nav-link" th:classappend="${activeTab == 'roles'} ? 'active'"
+       th:if="${canManageRoles}" th:href="@{/roles}">Roles</a>
+  </nav>
+
+  <!-- Reusable confirmation popup dialog fragment -->
+  <dialog th:fragment="confirmDialog(dialogId, titleId, messageId, actionBtnId, titleText, actionBtnText)"
+          th:id="${dialogId}" class="confirm-dialog">
+    <form method="dialog">
+      <h2 th:id="${titleId}" th:text="${titleText}">Confirm Action</h2>
+      <p th:id="${messageId}"></p>
+      <div class="drawer-actions">
+        <button class="button-secondary" value="cancel" type="submit">Cancel</button>
+        <button th:id="${actionBtnId}" class="danger-button" value="confirm" th:text="${actionBtnText}">Confirm</button>
+      </div>
+    </form>
+  </dialog>
+
+</body>
+</html>
+
