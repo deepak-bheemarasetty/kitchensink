@@ -1,5 +1,7 @@
 target/
 .vscode/
+documentation/
 .env
 .env.*
 !.env.example
+

@@ -1,166 +1,145 @@
 package com.kitchensink.controller;
 
-import com.kitchensink.dto.MemberRequest;
-import com.kitchensink.model.Member;
-import com.kitchensink.repository.MemberRepository;
-import com.kitchensink.service.DuplicateEmailException;
-import com.kitchensink.service.FeaturedMemberCacheService;
-import com.kitchensink.service.MemberPaginationService;
-import com.kitchensink.service.MemberPaginationService.MemberCursorPage;
-import com.kitchensink.service.MemberPaginationService.NumberedMemberPage;
-import com.kitchensink.service.MemberService;
-import jakarta.validation.Valid;
-import java.security.Principal;
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
-import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.ModelAttribute;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
-/** Renders the browser-based member management pages. */
+/**
+ * Serves the simple, server-rendered member and account workspaces.
+ *
+ * @author Deepak Bheemarasetty
+ */
 @Controller
 public class MemberViewController {
-  private final MemberRepository memberRepository;
-  private final MemberService memberService;
-  private final FeaturedMemberCacheService featuredMemberCacheService;
-  private final MemberPaginationService memberPaginationService;
+  private final MongoTemplate mongoTemplate;
 
-  /** Creates the browser controller with member persistence and in-memory featured caching. */
-  public MemberViewController(
-      MemberRepository memberRepository,
-      MemberService memberService,
-      FeaturedMemberCacheService featuredMemberCacheService,
-      MemberPaginationService memberPaginationService) {
-    this.memberRepository = memberRepository;
-    this.memberService = memberService;
-    this.featuredMemberCacheService = featuredMemberCacheService;
-    this.memberPaginationService = memberPaginationService;
+  public MemberViewController(MongoTemplate mongoTemplate) {
+    this.mongoTemplate = mongoTemplate;
   }
 
-  /** Shows the sign-in page before redirecting the user to Auth0. */
-  @GetMapping("/login")
-  public String showLogin() {
-    return "login";
-  }
-
-  /** Shows member search, cached most-viewed members, and the registration form. */
+  /**
+   * Routes the authenticated user to their default landing view.
+   *
+   * @param authentication current authentication
+   * @return redirect view name
+   */
   @GetMapping("/")
-  public String showHome(
-      @RequestParam(required = false) String searchEmail,
-      @RequestParam(required = false) String selected,
-      Principal principal,
-      Model model) {
-    model.addAttribute("member", new MemberRequest("", "", ""));
-    String normalizedSearchEmail = searchEmail == null ? "" : searchEmail.trim();
-    Optional<Member> searchResult =
-        normalizedSearchEmail.isEmpty()
-            ? Optional.empty()
-            : memberRepository.findByEmail(normalizedSearchEmail);
-    searchResult.ifPresent(featuredMemberCacheService::recordView);
-    model.addAttribute("username", principal.getName());
-    model.addAttribute("searchEmail", normalizedSearchEmail);
-    model.addAttribute("searchResult", searchResult.orElse(null));
-    model.addAttribute(
-        "searchNotFound", !normalizedSearchEmail.isEmpty() && searchResult.isEmpty());
-    model.addAttribute("featuredMembers", featuredMemberCacheService.getFeaturedMembers());
-    model.addAttribute(
-        "selectedMember",
-        selected == null ? null : featuredMemberCacheService.recordView(selected).orElse(null));
-    return "index";
+  public String home(Authentication authentication) {
+    if (has(authentication, "member:view")) {
+      return "redirect:/members";
+    }
+    if (has(authentication, "user:manage")) {
+      return "redirect:/users";
+    }
+    if (has(authentication, "role:manage")) {
+      return "redirect:/roles";
+    }
+    return "no-access";
   }
 
-  /** Lists all members in the browser UI. */
+  /**
+   * Renders the members management view.
+   *
+   * @param authentication current authentication
+   * @param model template model
+   * @return members view name
+   */
   @GetMapping("/members")
-  public String listMembers(
-      @RequestParam(required = false) String afterName,
-      @RequestParam(required = false) String afterEmail,
-      @RequestParam(required = false) String beforeName,
-      @RequestParam(required = false) String beforeEmail,
-      @RequestParam(required = false) String email,
-      @RequestParam(required = false) String selected,
-      @RequestParam(defaultValue = "0") int page,
-      Model model) {
-    afterName = normalizeCursor(afterName);
-    afterEmail = normalizeCursor(afterEmail);
-    beforeName = normalizeCursor(beforeName);
-    beforeEmail = normalizeCursor(beforeEmail);
-    model.addAttribute("afterName", afterName);
-    model.addAttribute("afterEmail", afterEmail);
-    model.addAttribute("beforeName", beforeName);
-    model.addAttribute("beforeEmail", beforeEmail);
-    String searchEmail = email == null ? "" : email.trim();
-    MemberCursorPage memberPage = null;
-    List<Member> members;
-    if (!searchEmail.isEmpty()) {
-      NumberedMemberPage filteredPage = memberPaginationService.getNumberedPage(page, searchEmail);
-      members = filteredPage.members();
-      model.addAttribute("numberedPage", filteredPage);
-      model.addAttribute("searchEmail", searchEmail);
-      model.addAttribute("searchNotFound", false);
-    } else {
-      NumberedMemberPage numberedPage = memberPaginationService.getNumberedPage(page);
-      members = numberedPage.members();
-      model.addAttribute("numberedPage", numberedPage);
-      model.addAttribute("searchEmail", "");
-      model.addAttribute("searchNotFound", false);
+  public String members(Authentication authentication, Model model) {
+    if (!has(authentication, "member:view")) {
+      return "forbidden";
     }
-
-    model.addAttribute("members", members);
-    model.addAttribute("cursorPage", memberPage);
-    model.addAttribute(
-        "selectedMember",
-        selected == null ? null : featuredMemberCacheService.recordView(selected).orElse(null));
+    addShell(authentication, model);
     return "all-members";
   }
 
-  /** Saves a new member from the home-page form. */
-  @PostMapping("/members")
-  public String createMember(
-      @Valid @ModelAttribute("member") MemberRequest request,
-      BindingResult bindingResult,
-      Model model,
-      Principal principal,
-      RedirectAttributes redirectAttributes) {
-    if (bindingResult.hasErrors()) {
-      populateHomeModel(model, principal);
-      return "index";
+  /**
+   * Renders the user accounts management view.
+   *
+   * @param authentication current authentication
+   * @param model template model
+   * @return users view name
+   */
+  @GetMapping("/users")
+  public String users(Authentication authentication, Model model) {
+    if (!has(authentication, "user:manage")) {
+      return "forbidden";
     }
+    addShell(authentication, model);
+    List<Map> roles = mongoTemplate.findAll(Map.class, "roles");
+    model.addAttribute("roles", roles);
+    return "users";
+  }
 
-    try {
-      Member createdMember = memberService.register(toEntity(request));
-      featuredMemberCacheService.recordView(createdMember);
-      redirectAttributes.addFlashAttribute("successMessage", "Member created successfully.");
-      redirectAttributes.addFlashAttribute("createdMember", createdMember);
-      return "redirect:/";
-    } catch (DuplicateEmailException e) {
-      model.addAttribute("registrationError", e.getMessage());
-      populateHomeModel(model, principal);
-      return "index";
+  /**
+   * Renders the role permissions management view.
+   *
+   * @param authentication current authentication
+   * @param model template model
+   * @return roles view name
+   */
+  @GetMapping("/roles")
+  public String roles(Authentication authentication, Model model) {
+    if (!has(authentication, "role:manage")) {
+      return "forbidden";
     }
+    addShell(authentication, model);
+    model.addAttribute("roles", mongoTemplate.findAll(Map.class, "roles"));
+    return "roles";
   }
 
-  private void populateHomeModel(Model model, Principal principal) {
-    model.addAttribute("username", principal.getName());
-    model.addAttribute("searchEmail", "");
-    model.addAttribute("searchResult", null);
-    model.addAttribute("searchNotFound", false);
-    model.addAttribute("featuredMembers", featuredMemberCacheService.getFeaturedMembers());
+  /**
+   * Renders the no-access notice view.
+   *
+   * @param authentication current authentication
+   * @return view name
+   */
+  @GetMapping("/no-access")
+  public String noAccess(Authentication authentication) {
+    return has(authentication, "member:view")
+            || has(authentication, "user:manage")
+            || has(authentication, "role:manage")
+        ? "redirect:/"
+        : "no-access";
   }
 
-  private static String normalizeCursor(String cursor) {
-    return cursor == null || cursor.isBlank() ? null : cursor;
+  @GetMapping("/forbidden")
+  public String forbidden() {
+    return "forbidden";
   }
 
-  private Member toEntity(MemberRequest request) {
-    Member member = new Member();
-    member.setName(request.name());
-    member.setEmail(request.email());
-    member.setPhoneNumber(request.phoneNumber());
-    return member;
+  private void addShell(Authentication authentication, Model model) {
+    List<String> permissions =
+        authentication.getAuthorities().stream()
+            .map(authority -> authority.getAuthority())
+            .filter(value -> value.startsWith("member:") || value.endsWith(":manage"))
+            .sorted()
+            .toList();
+    String username = authentication.getName();
+    if (authentication
+        instanceof
+        org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken oauth) {
+      String email = oauth.getPrincipal().getAttribute("email");
+      if (email != null) {
+        username = email;
+      }
+    }
+    model.addAttribute("username", username);
+    model.addAttribute("permissions", permissions);
+    model.addAttribute("canCreate", permissions.contains("member:create"));
+    model.addAttribute("canUpdate", permissions.contains("member:update"));
+    model.addAttribute("canDelete", permissions.contains("member:delete"));
+    model.addAttribute("canManageUsers", permissions.contains("user:manage"));
+    model.addAttribute("canManageRoles", permissions.contains("role:manage"));
+  }
+
+  private boolean has(Authentication authentication, String permission) {
+    return authentication != null
+        && authentication.getAuthorities().stream()
+            .anyMatch(authority -> permission.equals(authority.getAuthority()));
   }
 }

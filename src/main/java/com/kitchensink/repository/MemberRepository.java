@@ -1,18 +1,17 @@
 package com.kitchensink.repository;
 
 import com.kitchensink.model.Member;
-import java.util.List;
 import java.util.Optional;
+import org.bson.types.ObjectId;
 import org.springframework.data.mongodb.repository.MongoRepository;
 
 /**
- * Persistence operations for member records.
+ * Persistence operations for members.
  *
  * @author Deepak Bheemarasetty
  */
-public interface MemberRepository extends MongoRepository<Member, String> {
+public interface MemberRepository extends MongoRepository<Member, ObjectId> {
   Optional<Member> findByEmail(String email);
 
-  List<Member> findByEmailContainingIgnoreCase(String email);
-
+  Optional<Member> findByEmailLowerAndDeletedAtIsNull(String emailLower);
 }

@@ -1,72 +1,83 @@
-/*
- * Kitchen Sink application source
- * Copyright 2015, Red Hat, Inc. and/or its affiliates, and individual
- * contributors by the @authors tag. See the copyright.txt in the
- * distribution for a full listing of individual contributors.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- * http://www.apache.org/licenses/LICENSE-2.0
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package com.kitchensink.model;
 
-import jakarta.validation.constraints.Digits;
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotEmpty;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Pattern;
-import jakarta.validation.constraints.Size;
-import java.io.Serializable;
+import com.kitchensink.validation.Validator;
+import java.time.Instant;
+import org.bson.types.ObjectId;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.CompoundIndex;
-import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
+import tools.jackson.databind.annotation.JsonSerialize;
+import tools.jackson.databind.ser.std.ToStringSerializer;
 
 /**
- * Persistent member details and their validation constraints.
+ * Member directory record.
  *
  * @author Deepak Bheemarasetty
  */
 @SuppressWarnings("serial")
-@CompoundIndex(name = "member_name_email_cursor", def = "{'name': 1, 'email': 1}")
 @Document(collection = "members")
-public class Member implements Serializable {
+public class Member extends BaseEntity {
+  @Id private ObjectId id;
+  private String memberId;
+  private String firstName;
+  private String lastName;
+  private String fullNameLower;
+  private String email;
+  private String emailLower;
+  private String countryCode;
+  private String phone;
+  private String status;
+  private Instant deletedAt;
+  private ObjectId deletedBy;
 
-  @Id private String id;
+  private Member() {}
 
-  @NotNull
-  @Size(min = 1, max = 25)
-  @Pattern(regexp = "[\\p{L} ]+", message = "{name_validation_message}")
-  private String name;
+  public static Member create() {
+    return new Member();
+  }
 
-  @NotNull @NotEmpty @Email @Indexed(unique = true) private String email;
+  public String getFullName() {
+    return (firstName + " " + (lastName == null ? "" : lastName)).trim();
+  }
 
-  @NotNull
-  @Size(min = 10, max = 12)
-  @Digits(fraction = 0, integer = 12)
-  private String phoneNumber;
-
-  public String getId() {
+  @JsonSerialize(using = ToStringSerializer.class)
+  public ObjectId getId() {
     return id;
   }
 
-  public void setId(String id) {
+  public void setId(ObjectId id) {
     this.id = id;
   }
 
-  public String getName() {
-    return name;
+  public String getMemberId() {
+    return memberId;
   }
 
-  public void setName(String name) {
-    this.name = name;
+  public void setMemberId(String memberId) {
+    this.memberId = memberId;
+  }
+
+  public String getFirstName() {
+    return firstName;
+  }
+
+  public void setFirstName(String firstName) {
+    this.firstName = firstName;
+  }
+
+  public String getLastName() {
+    return lastName;
+  }
+
+  public void setLastName(String lastName) {
+    this.lastName = lastName;
+  }
+
+  public String getFullNameLower() {
+    return fullNameLower;
+  }
+
+  public void setFullNameLower(String fullNameLower) {
+    this.fullNameLower = fullNameLower;
   }
 
   public String getEmail() {
@@ -75,14 +86,58 @@ public class Member implements Serializable {
 
   public void setEmail(String email) {
     this.email = email;
+    this.emailLower = email == null ? null : email.toLowerCase();
   }
 
-  public String getPhoneNumber() {
-    return phoneNumber;
+  public String getEmailLower() {
+    return emailLower;
   }
 
-  public void setPhoneNumber(String phoneNumber) {
-    this.phoneNumber = phoneNumber;
+  public void setEmailLower(String emailLower) {
+    this.emailLower = emailLower;
   }
 
+  public String getCountryCode() {
+    return countryCode;
+  }
+
+  public void setCountryCode(String countryCode) {
+    this.countryCode = countryCode;
+  }
+
+  public String getPhone() {
+    return phone;
+  }
+
+  public void setPhone(String phone) {
+    this.phone = phone;
+  }
+
+  public String getStatus() {
+    return status;
+  }
+
+  public void setStatus(String status) {
+    this.status = status;
+  }
+
+  public Instant getDeletedAt() {
+    return deletedAt;
+  }
+
+  public void setDeletedAt(Instant deletedAt) {
+    this.deletedAt = deletedAt;
+  }
+
+  public ObjectId getDeletedBy() {
+    return deletedBy;
+  }
+
+  public void setDeletedBy(ObjectId deletedBy) {
+    this.deletedBy = deletedBy;
+  }
+
+  public void validate() {
+    Validator.member(this);
+  }
 }
