@@ -264,13 +264,14 @@
   }
 
   /* ── Create new user  →  POST /api/v1/users/identity ─────────────────── */
-  document.getElementById('user-form').addEventListener('submit', async event => {
+  userForm.addEventListener('submit', async event => {
     event.preventDefault();
-    const checked = [...event.currentTarget.querySelectorAll('input[name="roles"]:checked')].map(i => i.value);
+    const checked = [...userForm.querySelectorAll('input[name="roles"]:checked')].map(i => i.value);
     const payload = {
       username: document.getElementById('new-username').value.trim().toLowerCase(),
       roles: checked,
     };
+    userSubmitBtn.disabled = true;
     try {
       const response = await fetch(`${apiBase}/users/identity`, {
         method: 'POST', headers: headers(true), body: JSON.stringify(payload),
@@ -280,19 +281,26 @@
         throw new Error(errorMsg);
       }
       userDialog.close();
-      event.currentTarget.reset();
+      userForm.reset();
+      userForm.querySelectorAll('.field-error').forEach(el => el.textContent = '');
+      checkUserFormValidity();
       message('User account created.');
       await load();
       notifySync('USERS_UPDATED');
-    } catch (err) { message(err.message, true); }
+    } catch (err) {
+      message(err.message, true);
+    } finally {
+      checkUserFormValidity();
+    }
   });
 
   /* ── Save role changes  →  PUT /api/v1/users/{id}/roles ──────────────── */
-  document.getElementById('roles-form').addEventListener('submit', async event => {
+  rolesForm.addEventListener('submit', async event => {
     event.preventDefault();
     if (!selectedUser) return;
     const id = selectedUser.id || String(selectedUser._id);
-    const roles = [...event.currentTarget.querySelectorAll('input[name="roles"]:checked')].map(i => i.value);
+    const roles = [...rolesForm.querySelectorAll('input[name="roles"]:checked')].map(i => i.value);
+    rolesSubmitBtn.disabled = true;
     try {
       const response = await fetch(`${apiBase}/users/${id}/roles`, {
         method: 'PUT', headers: headers(true), body: JSON.stringify({ roles }),
@@ -305,7 +313,11 @@
       message('Roles updated.');
       await load();
       notifySync('USERS_UPDATED');
-    } catch (err) { message(err.message, true); }
+    } catch (err) {
+      message(err.message, true);
+    } finally {
+      checkRolesFormValidity();
+    }
   });
 
   /* ── Mobile nav ───────────────────────────────────────────────────────── */

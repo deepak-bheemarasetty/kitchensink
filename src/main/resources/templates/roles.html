@@ -1,1 +1,72 @@
-<!DOCTYPE html><html lang="en" xmlns:th="http://www.thymeleaf.org"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="csrf-token" th:content="${_csrf.token}"><meta name="csrf-header" th:content="${_csrf.headerName}"><meta name="api-base" th:content="@{/api/v1}"><title>Roles | Kitchensink</title><link rel="stylesheet" th:href="@{/css/styles.css}"><script defer th:src="@{/js/roles-ui.js}"></script></head><body><a class="skip-link" href="#main">Skip to content</a><div class="app-shell"><header class="topbar"><button class="menu-toggle" type="button" aria-expanded="false" aria-controls="primary-nav">☰ <span class="sr-only">Open navigation</span></button><div class="brand"><span class="brand-mark">K</span> Kitchensink</div><div class="profile"><span class="avatar" aria-hidden="true" th:text="${#strings.substring(username,0,1).toUpperCase()}">U</span><span class="profile-name" th:text="${username}">user</span><form th:action="@{/logout}" method="post"><input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"><button class="text-button" type="submit">Sign out</button></form></div></header><div class="workspace"><nav id="primary-nav" class="sidebar" aria-label="Primary navigation"><a class="nav-link" th:if="${permissions.contains('member:view')}" th:href="@{/members}">Members</a><a class="nav-link" th:if="${canManageUsers}" th:href="@{/users}">Users</a><a class="nav-link active" th:if="${canManageRoles}" th:href="@{/roles}">Roles</a></nav><main id="main" class="page-content"><div class="page-heading"><div><p class="eyebrow">ACCESS CONTROL</p><h1>Roles</h1><p class="subheading">Review each role’s permissions.</p></div><button id="add-role" class="primary" type="button">＋ Add role</button></div><div id="role-notice" class="notice" role="status" hidden></div><section class="management-card"><div class="table-wrap"><table class="data-table"><thead><tr><th>Role</th><th>Description</th><th>Effective permissions</th><th>Type</th><th>Actions</th></tr></thead><tbody id="role-rows"><tr><td colspan="5" class="loading-cell">Loading roles…</td></tr></tbody></table></div></section></main></div></div><dialog id="role-dialog" class="confirm-dialog"><form id="role-form"><h2 id="role-title">Add role</h2><label for="role-name">Name</label><input id="role-name" name="name" required maxlength="50"><small class="field-error" data-error="name"></small><label for="role-description">Description</label><input id="role-description" name="description" maxlength="160"><small class="field-error" data-error="description"></small><fieldset class="role-checklist"><legend>Permissions</legend><p class="search-summary">Create, update, and delete automatically include member:view.</p><label><input type="checkbox" name="permissions" value="member:view"><span>View members</span></label><label><input type="checkbox" name="permissions" value="member:create"><span>Create members</span></label><label><input type="checkbox" name="permissions" value="member:update"><span>Update members</span></label><label><input type="checkbox" name="permissions" value="member:delete"><span>Delete members</span></label><label><input type="checkbox" name="permissions" value="user:manage"><span>Manage users</span></label><label><input type="checkbox" name="permissions" value="role:manage"><span>Manage roles</span></label></fieldset><div class="drawer-actions"><button type="button" class="button-secondary" id="cancel-role">Cancel</button><button type="submit" class="primary">Save role</button></div></form></dialog><dialog id="confirm-role-dialog" class="confirm-dialog"><form method="dialog"><h2>Delete role?</h2><p id="confirm-role-message"></p><div class="drawer-actions"><button class="button-secondary" value="cancel">Cancel</button><button class="danger-button" value="confirm">Delete role</button></div></form></dialog></body></html>
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head('Roles', '/js/roles-ui.js')}"></head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="app-shell">
+    <header th:replace="~{fragments/layout :: topbar}"></header>
+    <div class="workspace">
+      <nav th:replace="~{fragments/layout :: sidebar('roles')}"></nav>
+      <main id="main" class="page-content">
+        <div class="page-heading">
+          <div>
+            <p class="eyebrow">ACCESS CONTROL</p>
+            <h1>Roles</h1>
+            <p class="subheading">Review each role’s permissions.</p>
+          </div>
+          <button id="add-role" class="primary" type="button">＋ Add role</button>
+        </div>
+        <div id="role-notice" class="notice" role="status" hidden></div>
+        <section class="management-card">
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Role</th>
+                  <th>Description</th>
+                  <th>Effective permissions</th>
+                  <th>Type</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="role-rows">
+                <tr><td colspan="5" class="loading-cell">Loading roles…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <!-- Role creation/edit dialog -->
+  <dialog id="role-dialog" class="confirm-dialog">
+    <form id="role-form">
+      <h2 id="role-title">Add role</h2>
+      <label for="role-name">Name</label>
+      <input id="role-name" name="name" required maxlength="50">
+      <small class="field-error" data-error="name"></small>
+      <label for="role-description">Description</label>
+      <input id="role-description" name="description" maxlength="160">
+      <small class="field-error" data-error="description"></small>
+      <fieldset class="role-checklist">
+        <legend>Permissions</legend>
+        <p class="search-summary">Create, update, and delete automatically include member:view.</p>
+        <label><input type="checkbox" name="permissions" value="member:view"><span>View members</span></label>
+        <label><input type="checkbox" name="permissions" value="member:create"><span>Create members</span></label>
+        <label><input type="checkbox" name="permissions" value="member:update"><span>Update members</span></label>
+        <label><input type="checkbox" name="permissions" value="member:delete"><span>Delete members</span></label>
+        <label><input type="checkbox" name="permissions" value="user:manage"><span>Manage users</span></label>
+        <label><input type="checkbox" name="permissions" value="role:manage"><span>Manage roles</span></label>
+      </fieldset>
+      <div class="drawer-actions">
+        <button type="button" class="button-secondary" id="cancel-role">Cancel</button>
+        <button type="submit" class="primary">Save role</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Reusable Delete Role Confirmation Dialog -->
+  <dialog th:replace="~{fragments/layout :: confirmDialog('confirm-role-dialog', null, 'confirm-role-message', null, 'Delete role?', 'Delete role')}"></dialog>
+</body>
+</html>
