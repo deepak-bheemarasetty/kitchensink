@@ -36,7 +36,7 @@ for (const old of legacy) {
     errors.push({ id: old._id, reason: `invalid phone number digits: ${phone}` });
     continue;
   }
-  const countryCode = rawCc && /^[0-9]{1,4}$/.test(rawCc) ? rawCc : null;
+  const countryCode = rawCc && !rawCc.startsWith("0") && /^[1-9][0-9]{0,3}$/.test(rawCc) ? rawCc : null;
 
   const createdAt = old.creationDate || new Date();
   const actorId = new ObjectId("000000000000000000000000");
@@ -97,7 +97,7 @@ db.runCommand({
         fullNameLower: { bsonType: "string", maxLength: 121 },
         email: { bsonType: "string", minLength: 3, maxLength: 254 },
         emailLower: { bsonType: "string", minLength: 3, maxLength: 254 },
-        countryCode: { bsonType: ["string", "null"], pattern: "^[0-9]{1,4}$" },
+        countryCode: { bsonType: ["string", "null"], pattern: "^[1-9][0-9]{0,3}$" },
         phone: { bsonType: "string", pattern: "^[1-9][0-9]{5,13}$" },
         status: { bsonType: "string", enum: ["active", "inactive"] },
         createdAt: { bsonType: "date" },

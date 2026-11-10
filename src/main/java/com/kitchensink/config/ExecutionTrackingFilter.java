@@ -101,7 +101,11 @@ public class ExecutionTrackingFilter extends OncePerRequestFilter {
           executionService.recordCompletion(
               execution.getId(), "FAILED", caughtException.getMessage());
         } else if (statusCode >= 400) {
-          String errorMessage = extractErrorMessage(wrappedResponse, statusCode);
+          String internalDetail = (String) request.getAttribute("EXECUTION_ERROR_DETAIL");
+          String errorMessage =
+              (internalDetail != null && !internalDetail.isBlank())
+                  ? internalDetail
+                  : extractErrorMessage(wrappedResponse, statusCode);
           executionService.recordCompletion(execution.getId(), "FAILED", errorMessage);
         } else {
           executionService.recordCompletion(execution.getId(), "SUCCESS", null);

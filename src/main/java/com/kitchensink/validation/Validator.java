@@ -24,8 +24,8 @@ public final class Validator {
               + "(?=.{1,255}$)"
               + "(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)+[A-Za-z]{2,63}$");
   private static final Pattern PHONE = Pattern.compile("^[1-9][0-9]{5,13}$");
-  private static final Pattern COUNTRY_CODE = Pattern.compile("^[0-9]{1,4}$");
-  private static final Pattern ROLE = Pattern.compile("^[a-z0-9-]{2,30}$");
+  private static final Pattern COUNTRY_CODE = Pattern.compile("^[1-9][0-9]{0,3}$");
+  private static final Pattern ROLE = Pattern.compile("^[a-z0-9 -]{2,30}$");
   private static final Set<String> PERMISSIONS =
       Set.of(
           "member:view",
@@ -67,7 +67,7 @@ public final class Validator {
   }
 
   /**
-   * Validates and normalizes a person's name part.
+   * Normalizes and validates a person's name part.
    *
    * @param value raw name
    * @param field field name for error reporting
@@ -75,9 +75,11 @@ public final class Validator {
    * @return normalized name
    */
   public static String name(String value, String field, boolean required) {
+    String label =
+        "firstName".equals(field) ? "First Name" : ("lastName".equals(field) ? "Last Name" : field);
     if (value == null) {
       if (required) {
-        fail(field, "is required");
+        throw new ValidationException(field, label + " is required");
       }
       return null;
     }
@@ -86,14 +88,18 @@ public final class Validator {
     rejectControls(normalized, field);
     if (normalized.isEmpty()) {
       if (required) {
-        fail(field, "is required");
+        throw new ValidationException(field, label + " is required");
       }
       return null;
     }
-    if (normalized.length() > 60
-        || !NAME.matcher(normalized).matches()
+    if (normalized.length() > 60) {
+      throw new ValidationException(field, label + " must be at most 60 characters");
+    }
+    if (!NAME.matcher(normalized).matches()
         || normalized.codePoints().noneMatch(Character::isLetter)) {
-      fail(field, "is invalid");
+      throw new ValidationException(
+          field,
+          label + " contains Invalid Characters, Please Enter a Valid " + label.replace(" ", ""));
     }
     return normalized;
   }
@@ -105,12 +111,18 @@ public final class Validator {
    * @return normalized email address
    */
   public static String email(String value) {
-    String normalized = normalizeRequired(value, "email", 254);
-    if (normalized.length() < 3 || !EMAIL.matcher(normalized).matches()) {
-      fail("email", "format is invalid");
+    if (value == null || value.trim().isEmpty()) {
+      throw new ValidationException("email", "Email Address isn't valid");
+    }
+    String normalized = Normalizer.normalize(value.trim(), Normalizer.Form.NFC);
+    rejectControls(normalized, "email");
+    if (normalized.length() < 3
+        || normalized.length() > 254
+        || !EMAIL.matcher(normalized).matches()) {
+      throw new ValidationException("email", "Email Address isn't valid");
     }
     if (normalized.substring(0, normalized.indexOf('@')).length() > 64) {
-      fail("email", "local part exceeds 64 characters");
+      throw new ValidationException("email", "Email Address isn't valid");
     }
     return normalized;
   }
@@ -122,9 +134,20 @@ public final class Validator {
    * @return normalized phone string
    */
   public static String phone(String value) {
+    if (value == null || value.trim().isEmpty()) {
+      throw new ValidationException("phone", "Phone Number is required");
+    }
+    String trimmed = value.trim();
+    if (trimmed.startsWith("0")) {
+      throw new ValidationException("phone", "Phone Number Cannot start with a 0");
+    }
     String normalized = normalizeRequired(value, "phone", 32).replaceAll("[\\s()-]", "");
+    if (normalized.startsWith("0")) {
+      throw new ValidationException("phone", "Phone Number Cannot start with a 0");
+    }
     if (!PHONE.matcher(normalized).matches()) {
-      fail("phone", "must contain 6 to 14 digits and cannot start with zero");
+      throw new ValidationException(
+          "phone", "Phone Number must contain 6 to 14 digits and cannot start with a 0");
     }
     return normalized;
   }
@@ -140,8 +163,12 @@ public final class Validator {
       return null;
     }
     String normalized = value.trim();
+    if (normalized.startsWith("0")) {
+      throw new ValidationException("countryCode", "Country Code Cannot start with a 0");
+    }
     if (!COUNTRY_CODE.matcher(normalized).matches()) {
-      fail("countryCode", "must contain 1 to 4 digits");
+      throw new ValidationException(
+          "countryCode", "Country Code must contain 1 to 4 digits and cannot start with a 0");
     }
     return normalized;
   }
@@ -220,7 +247,7 @@ public final class Validator {
     }
     String normalized = value.trim().toLowerCase(Locale.ROOT);
     if (!ROLE.matcher(normalized).matches()) {
-      fail("name", "must be 2 to 30 lowercase letters, digits, or hyphens");
+      fail("name", "must be 2 to 30 lowercase letters, digits, spaces, or hyphens");
     }
     return normalized;
   }

@@ -18,6 +18,30 @@
   let pendingUserAction = null;
   let searchTimer;
 
+  // Cross-tab synchronization via BroadcastChannel with localStorage fallback
+  const syncChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('kitchensink_sync') : null;
+  function notifySync(type) {
+    if (syncChannel) syncChannel.postMessage({ type, at: Date.now() });
+    try { localStorage.setItem('kitchensink_sync_event', JSON.stringify({ type, at: Date.now() })); } catch (_) {}
+  }
+  if (syncChannel) {
+    syncChannel.onmessage = event => {
+      if (event?.data?.type === 'USERS_UPDATED' || event?.data?.type === 'ROLES_UPDATED') {
+        load();
+      }
+    };
+  }
+  window.addEventListener('storage', event => {
+    if (event.key === 'kitchensink_sync_event' && event.newValue) {
+      try {
+        const data = JSON.parse(event.newValue);
+        if (data.type === 'USERS_UPDATED' || data.type === 'ROLES_UPDATED') {
+          load();
+        }
+      } catch (_) {}
+    }
+  });
+
   const headers = (json = false) => ({
     ...(json ? { 'Content-Type': 'application/json' } : {}),
     ...(token ? { [csrfHeader]: token } : {}),
@@ -33,6 +57,24 @@
     notice.hidden = false;
   }
 
+  async function parseErrorMessage(response, defaultMsg) {
+    try {
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const body = await response.json();
+        const err = body.error || body;
+        if (err.message) return err.message;
+        if (err.fields && Array.isArray(err.fields) && err.fields.length > 0) {
+          return err.fields.map(f => `${f.field}: ${f.message}`).join(', ');
+        }
+      } else {
+        const text = await response.text();
+        if (text && text.trim().length > 0) return text.trim();
+      }
+    } catch (_) {}
+    return defaultMsg || `Request failed with status ${response.status}`;
+  }
+
   /* ── Load users + roles in parallel ──────────────────────────────────── */
   async function load() {
     try {
@@ -40,8 +82,14 @@
         fetch(`${apiBase}/users`, { headers: headers() }),
         fetch(`${apiBase}/roles`, { headers: headers() }),
       ]);
-      if (!userResp.ok) throw new Error('Could not load user accounts. Please try again.');
-      if (!roleResp.ok) throw new Error('Could not load roles.');
+      if (!userResp.ok) {
+        const errText = await parseErrorMessage(userResp, 'Could not load user accounts. Please try again.');
+        throw new Error(errText);
+      }
+      if (!roleResp.ok) {
+        const errText = await parseErrorMessage(roleResp, 'Could not load roles.');
+        throw new Error(errText);
+      }
       users = await userResp.json();
       allRoles = await roleResp.json();
       render();
@@ -64,7 +112,6 @@
     }
 
     rows.innerHTML = list.map(u => {
-      // 'id' is the plain hex string added by the server; fall back to stringifying _id
       const id = u.id || String(u._id);
       const mine = u.isSelf === true ||
         u.username.toLowerCase() === document.body.dataset.username?.toLowerCase();
@@ -91,8 +138,57 @@
   roleFilter.addEventListener('change', render);
   activeFilter.addEventListener('change', render);
 
-  /* ── Add-user dialog ──────────────────────────────────────────────────── */
-  document.getElementById('show-invite').addEventListener('click', () => userDialog.showModal());
+  /* ── Add-user dialog & validation ─────────────────────────────────────── */
+  const userForm = document.getElementById('user-form');
+  const newUsernameInput = document.getElementById('new-username');
+  const userSubmitBtn = userForm.querySelector('[type="submit"]');
+
+  function validateUserEmail() {
+    const val = newUsernameInput.value.trim();
+    let err = '';
+    if (!val) {
+      err = 'Email Address is required';
+    } else if (!/^[A-Za-z0-9_+\-]+(?:\.[A-Za-z0-9_+\-]+)*@(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$/.test(val)) {
+      err = "Email Address isn't valid";
+    }
+    const errEl = userForm.querySelector('[data-error="username"]');
+    if (errEl) errEl.textContent = err;
+    return !err;
+  }
+
+  function checkUserFormValidity() {
+    const val = newUsernameInput.value.trim();
+    const hasChecked = userForm.querySelectorAll('input[name="roles"]:checked').length > 0;
+    const errEl = userForm.querySelector('[data-error="username"]');
+    const hasError = errEl && Boolean(errEl.textContent);
+    userSubmitBtn.disabled = !val || !hasChecked || hasError;
+  }
+
+  newUsernameInput.addEventListener('input', () => {
+    validateUserEmail();
+    checkUserFormValidity();
+  });
+  newUsernameInput.addEventListener('blur', () => {
+    validateUserEmail();
+    checkUserFormValidity();
+  });
+  userForm.querySelectorAll('input[name="roles"]').forEach(cb => {
+    cb.addEventListener('change', checkUserFormValidity);
+  });
+
+  const rolesForm = document.getElementById('roles-form');
+  const rolesSubmitBtn = rolesForm.querySelector('[type="submit"]');
+  function checkRolesFormValidity() {
+    const hasChecked = rolesForm.querySelectorAll('input[name="roles"]:checked').length > 0;
+    rolesSubmitBtn.disabled = !hasChecked;
+  }
+
+  document.getElementById('show-invite').addEventListener('click', () => {
+    userForm.reset();
+    userForm.querySelectorAll('.field-error').forEach(el => el.textContent = '');
+    checkUserFormValidity();
+    userDialog.showModal();
+  });
   document.getElementById('cancel-user').addEventListener('click', () => userDialog.close());
 
   /* ── Roles panel ──────────────────────────────────────────────────────── */
@@ -119,6 +215,10 @@
             ${r.permissions?.length ? `<small class="role-permissions">${escapeHtml(r.permissions.join(', '))}</small>` : ''}
           </span>
         </label>`).join('');
+      document.getElementById('role-options').querySelectorAll('input[name="roles"]').forEach(cb => {
+        cb.addEventListener('change', checkRolesFormValidity);
+      });
+      checkRolesFormValidity();
       rolesDialog.showModal();
     }
 
@@ -140,7 +240,7 @@
   });
 
   confirmUserDialog?.addEventListener('close', async () => {
-    if (confirmUserDialog.returnValue !== 'confirm' || !pendingUserAction) return;
+    if (confirmRoleDialogOrDefault(confirmUserDialog) !== 'confirm' || !pendingUserAction) return;
     const { id, isActive } = pendingUserAction;
     pendingUserAction = null;
     try {
@@ -150,13 +250,18 @@
         body: JSON.stringify({ isActive }),
       });
       if (!response.ok) {
-        const body = await response.text().catch(() => '');
-        throw new Error(body || 'The account could not be updated.');
+        const errorMsg = await parseErrorMessage(response, 'The account could not be updated.');
+        throw new Error(errorMsg);
       }
       message(`Account ${isActive ? 'activated' : 'deactivated'}.`);
       await load();
+      notifySync('USERS_UPDATED');
     } catch (err) { message(err.message, true); }
   });
+
+  function confirmRoleDialogOrDefault(dlg) {
+    return dlg.returnValue;
+  }
 
   /* ── Create new user  →  POST /api/v1/users/identity ─────────────────── */
   document.getElementById('user-form').addEventListener('submit', async event => {
@@ -170,11 +275,15 @@
       const response = await fetch(`${apiBase}/users/identity`, {
         method: 'POST', headers: headers(true), body: JSON.stringify(payload),
       });
-      if (!response.ok) throw new Error('Could not register the identity. Check that the email is valid and roles are selected.');
+      if (!response.ok) {
+        const errorMsg = await parseErrorMessage(response, 'Could not register the identity. Check that the email is valid and roles are selected.');
+        throw new Error(errorMsg);
+      }
       userDialog.close();
       event.currentTarget.reset();
       message('User account created.');
       await load();
+      notifySync('USERS_UPDATED');
     } catch (err) { message(err.message, true); }
   });
 
@@ -189,12 +298,13 @@
         method: 'PUT', headers: headers(true), body: JSON.stringify({ roles }),
       });
       if (!response.ok) {
-        const body = await response.text().catch(() => '');
-        throw new Error(body || 'Could not update roles. Self-role and last-admin changes are protected.');
+        const errorMsg = await parseErrorMessage(response, 'Could not update roles. Self-role and last-admin changes are protected.');
+        throw new Error(errorMsg);
       }
       rolesDialog.close();
       message('Roles updated.');
       await load();
+      notifySync('USERS_UPDATED');
     } catch (err) { message(err.message, true); }
   });
 
