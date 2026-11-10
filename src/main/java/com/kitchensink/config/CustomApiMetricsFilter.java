@@ -72,4 +72,3 @@ public class CustomApiMetricsFilter extends OncePerRequestFilter {
         .record(durationNanos, TimeUnit.NANOSECONDS);
   }
 }
-

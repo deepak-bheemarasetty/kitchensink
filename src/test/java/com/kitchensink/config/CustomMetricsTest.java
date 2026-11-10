@@ -4,9 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import com.mongodb.ServerAddress;
-import com.mongodb.connection.ConnectionDescription;
-import com.mongodb.connection.ServerId;
 import com.mongodb.event.CommandFailedEvent;
 import com.mongodb.event.CommandStartedEvent;
 import com.mongodb.event.CommandSucceededEvent;
@@ -69,18 +66,17 @@ class CustomMetricsTest {
     final CustomDbMetricsConfiguration.CustomDbMetricsCommandListener listener =
         new CustomDbMetricsConfiguration.CustomDbMetricsCommandListener(registry, "kitchensink");
 
-    ConnectionDescription connection = mock(ConnectionDescription.class);
-    when(connection.getServerId())
-        .thenReturn(new ServerId(new com.mongodb.connection.ClusterId(), new ServerAddress()));
-
     BsonDocument findDoc = new BsonDocument("find", new BsonString("members"));
-    CommandStartedEvent startFind =
-        new CommandStartedEvent(1, 100, connection, "kitchensink", "find", findDoc);
+    CommandStartedEvent startFind = mock(CommandStartedEvent.class);
+    when(startFind.getRequestId()).thenReturn(100);
+    when(startFind.getCommandName()).thenReturn("find");
+    when(startFind.getCommand()).thenReturn(findDoc);
     listener.commandStarted(startFind);
 
-    CommandSucceededEvent successFind =
-        new CommandSucceededEvent(
-            1, 100, connection, "kitchensink", "find", new BsonDocument(), 5000000);
+    CommandSucceededEvent successFind = mock(CommandSucceededEvent.class);
+    when(successFind.getRequestId()).thenReturn(100);
+    when(successFind.getCommandName()).thenReturn("find");
+    when(successFind.getElapsedTime(TimeUnit.NANOSECONDS)).thenReturn(5_000_000L);
     listener.commandSucceeded(successFind);
 
     Timer successTimer =
@@ -97,13 +93,16 @@ class CustomMetricsTest {
 
     // Test failure
     BsonDocument insertDoc = new BsonDocument("insert", new BsonString("users"));
-    CommandStartedEvent startInsert =
-        new CommandStartedEvent(2, 101, connection, "kitchensink", "insert", insertDoc);
+    CommandStartedEvent startInsert = mock(CommandStartedEvent.class);
+    when(startInsert.getRequestId()).thenReturn(101);
+    when(startInsert.getCommandName()).thenReturn("insert");
+    when(startInsert.getCommand()).thenReturn(insertDoc);
     listener.commandStarted(startInsert);
 
-    CommandFailedEvent failInsert =
-        new CommandFailedEvent(
-            2, 101, connection, "kitchensink", "insert", 2000000, new RuntimeException("DB error"));
+    CommandFailedEvent failInsert = mock(CommandFailedEvent.class);
+    when(failInsert.getRequestId()).thenReturn(101);
+    when(failInsert.getCommandName()).thenReturn("insert");
+    when(failInsert.getElapsedTime(TimeUnit.NANOSECONDS)).thenReturn(2_000_000L);
     listener.commandFailed(failInsert);
 
     Timer failTimer =
@@ -120,13 +119,86 @@ class CustomMetricsTest {
 
     // Test internal command is ignored
     BsonDocument pingDoc = new BsonDocument("ping", new BsonString("1"));
-    CommandStartedEvent pingStart =
-        new CommandStartedEvent(3, 102, connection, "kitchensink", "ping", pingDoc);
+    CommandStartedEvent pingStart = mock(CommandStartedEvent.class);
+    when(pingStart.getRequestId()).thenReturn(102);
+    when(pingStart.getCommandName()).thenReturn("ping");
+    when(pingStart.getCommand()).thenReturn(pingDoc);
     listener.commandStarted(pingStart);
     assertThat(registry.find("app.db.operations").tag("method", "ping").timer()).isNull();
 
     // Verify customizer bean creation
     final CustomDbMetricsConfiguration config = new CustomDbMetricsConfiguration();
-    assertThat(config.customDbMetricsCustomizer(registry, "kitchensink")).isNotNull();
+    var customizer = config.customDbMetricsCustomizer(registry, "kitchensink");
+    assertThat(customizer).isNotNull();
+    var builder = com.mongodb.MongoClientSettings.builder();
+    customizer.customize(builder);
+  }
+
+  @Test
+  void apiMetricsFilterHandlesRootContextPath() throws ServletException, IOException {
+    CustomApiMetricsFilter filter = new CustomApiMetricsFilter(registry, "kitchensink");
+
+    MockHttpServletRequest request = new MockHttpServletRequest("GET", "/");
+    request.setContextPath("");
+    MockHttpServletResponse response = new MockHttpServletResponse();
+    response.setStatus(200);
+
+    FilterChain chain = (req, res) -> {};
+    filter.doFilter(request, response, chain);
+
+    Timer timer =
+        registry
+            .find("app.api.requests")
+            .tag("api", "GET /")
+            .tag("status", "200")
+            .tag("application-name", "kitchensink")
+            .timer();
+
+    assertThat(timer).isNotNull();
+  }
+
+  @Test
+  void dbMetricsCommandListenerHandlesUntrackedEventsAndNonStringCollections() {
+    final CustomDbMetricsConfiguration.CustomDbMetricsCommandListener listener =
+        new CustomDbMetricsConfiguration.CustomDbMetricsCommandListener(registry, "kitchensink");
+
+    // Succeeded or failed with no started event
+    CommandSucceededEvent orphanSuccess = mock(CommandSucceededEvent.class);
+    when(orphanSuccess.getRequestId()).thenReturn(999);
+    listener.commandSucceeded(orphanSuccess);
+
+    CommandFailedEvent orphanFailed = mock(CommandFailedEvent.class);
+    when(orphanFailed.getRequestId()).thenReturn(999);
+    listener.commandFailed(orphanFailed);
+
+    // Non-string command value defaults to "system"
+    BsonDocument countDoc = new BsonDocument("count", new org.bson.BsonInt32(1));
+    CommandStartedEvent startCount = mock(CommandStartedEvent.class);
+    when(startCount.getRequestId()).thenReturn(200);
+    when(startCount.getCommandName()).thenReturn("count");
+    when(startCount.getCommand()).thenReturn(countDoc);
+    listener.commandStarted(startCount);
+
+    CommandSucceededEvent successCount = mock(CommandSucceededEvent.class);
+    when(successCount.getRequestId()).thenReturn(200);
+    when(successCount.getCommandName()).thenReturn("count");
+    when(successCount.getElapsedTime(TimeUnit.NANOSECONDS)).thenReturn(1_000_000L);
+    listener.commandSucceeded(successCount);
+
+    assertThat(
+            registry
+                .find("app.db.operations")
+                .tag("model", "system")
+                .tag("method", "count")
+                .timer())
+        .isNotNull();
+
+    // Exercise all internal command filters
+    for (String cmd :
+        new String[] {"hello", "isMaster", "buildInfo", "saslStart", "saslContinue"}) {
+      CommandStartedEvent internalCmd = mock(CommandStartedEvent.class);
+      when(internalCmd.getCommandName()).thenReturn(cmd);
+      listener.commandStarted(internalCmd);
+    }
   }
 }
