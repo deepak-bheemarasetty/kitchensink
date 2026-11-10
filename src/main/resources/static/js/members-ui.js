@@ -24,6 +24,30 @@
   let pendingDelete;
   let deletedMemberId;
 
+  // Cross-tab synchronization via BroadcastChannel with localStorage fallback
+  const syncChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('kitchensink_sync') : null;
+  function notifySync(type) {
+    if (syncChannel) syncChannel.postMessage({ type, at: Date.now() });
+    try { localStorage.setItem('kitchensink_sync_event', JSON.stringify({ type, at: Date.now() })); } catch (_) {}
+  }
+  if (syncChannel) {
+    syncChannel.onmessage = event => {
+      if (event?.data?.type === 'MEMBERS_UPDATED') {
+        load(true);
+      }
+    };
+  }
+  window.addEventListener('storage', event => {
+    if (event.key === 'kitchensink_sync_event' && event.newValue) {
+      try {
+        const data = JSON.parse(event.newValue);
+        if (data.type === 'MEMBERS_UPDATED') {
+          load(true);
+        }
+      } catch (_) {}
+    }
+  });
+
   function headers(json = false) {
     const result = {};
     if (json) result['Content-Type'] = 'application/json';
@@ -53,6 +77,25 @@
     const name = escapeHtml(member.name || `${member.firstName} ${member.lastName || ''}`.trim());
     return `<article class="member-card"><div class="member-card-top"><strong class="member-name">${name}</strong><span class="status-badge ${escapeHtml(member.status)}">${escapeHtml(member.status)}</span></div><span class="member-meta">${escapeHtml(member.memberId)}</span><span class="member-email">${escapeHtml(member.email)}</span><span class="member-phone">${escapeHtml(member.phone || '')}</span>${memberActions(member)}</article>`;
   }
+
+  async function parseErrorMessage(response, defaultMsg) {
+    try {
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const body = await response.json();
+        const err = body.error || body;
+        if (err.message) return err.message;
+        if (err.fields && Array.isArray(err.fields) && err.fields.length > 0) {
+          return err.fields.map(f => `${f.field}: ${f.message}`).join(', ');
+        }
+      } else {
+        const text = await response.text();
+        if (text && text.trim().length > 0) return text.trim();
+      }
+    } catch (_) {}
+    return defaultMsg || `Request failed with status ${response.status}`;
+  }
+
   async function load(reset = false) {
     if (loading) return;
     loading = true;
@@ -66,7 +109,13 @@
     const url = `${apiBase}/members?${params}`;
     try {
       const response = await fetch(url, {headers: headers()});
-      if (!response.ok) throw new Error(response.status === 401 ? 'Your session expired. Sign in again.' : 'Could not load the member directory. Please try again.');
+      if (!response.ok) {
+        const errText = await parseErrorMessage(
+          response,
+          response.status === 401 ? 'Your session expired. Sign in again.' : 'Could not load the member directory. Please try again.'
+        );
+        throw new Error(errText);
+      }
       const result = await response.json();
       if (reset) rows.innerHTML = '';
       if (!result.data.length && reset) {
@@ -107,12 +156,16 @@
     if (member) {
       document.getElementById('email').readOnly = false;
     }
+    checkFormValidity();
     dialog.showModal();
     document.getElementById('firstName').focus();
   }
   async function fetchMember(id) {
     const response = await fetch(`${apiBase}/members/${encodeURIComponent(id)}`, {headers:headers()});
-    if (!response.ok) throw new Error('Unable to open this member. Refresh the page and try again.');
+    if (!response.ok) {
+      const errText = await parseErrorMessage(response, 'Unable to open this member. Refresh the page and try again.');
+      throw new Error(errText);
+    }
     return response.json();
   }
   document.getElementById('add-member')?.addEventListener('click', () => openForm(null));
@@ -139,8 +192,96 @@
       confirmDialog.showModal();
     }
   });
+  function validateField(input) {
+    const name = input.name;
+    const val = input.value.trim();
+    let err = '';
+    if (name === 'firstName') {
+      if (!val) {
+        err = 'First Name is required';
+      } else if (/\d/.test(val) || !/^[\p{L}\p{M}][\p{L}\p{M} .'-]*$/u.test(val)) {
+        err = 'First Name contains Invalid Characters, Please Enter a Valid FirstName';
+      } else if (val.length > 60) {
+        err = 'First Name must be at most 60 characters';
+      }
+    } else if (name === 'lastName') {
+      if (val && (/\d/.test(val) || !/^[\p{L}\p{M}][\p{L}\p{M} .'-]*$/u.test(val))) {
+        err = 'Last Name contains Invalid Characters, Please Enter a Valid LastName';
+      } else if (val.length > 60) {
+        err = 'Last Name must be at most 60 characters';
+      }
+    } else if (name === 'email') {
+      if (!val) {
+        err = 'Email Address isn\'t valid';
+      } else if (!/^[A-Za-z0-9_+\-]+(?:\.[A-Za-z0-9_+\-]+)*@(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$/.test(val)) {
+        err = 'Email Address isn\'t valid';
+      }
+    } else if (name === 'countryCode') {
+      if (val) {
+        if (val.startsWith('0')) {
+          err = 'Country Code Cannot start with a 0';
+        } else if (!/^[1-9][0-9]{0,3}$/.test(val)) {
+          err = 'Country Code must contain 1 to 4 digits and cannot start with a 0';
+        }
+      }
+    } else if (name === 'phone') {
+      if (!val) {
+        err = 'Phone Number is required';
+      } else if (val.startsWith('0')) {
+        err = 'Phone Number Cannot start with a 0';
+      } else if (!/^[1-9][0-9]{5,13}$/.test(val.replace(/[\s()-]/g, ''))) {
+        err = 'Phone Number must contain 6 to 14 digits and cannot start with a 0';
+      }
+    }
+    const errEl = form.querySelector(`[data-error="${name}"]`);
+    if (errEl) errEl.textContent = err;
+    return !err;
+  }
+
+  function checkFormValidity() {
+    const saveBtn = form.querySelector('[type="submit"]');
+    if (!saveBtn) return;
+    const fn = document.getElementById('firstName')?.value.trim();
+    const em = document.getElementById('email')?.value.trim();
+    const ph = document.getElementById('phone')?.value.trim();
+    if (!fn || !em || !ph) {
+      saveBtn.disabled = true;
+      return;
+    }
+    const inputs = ['firstName', 'lastName', 'email', 'countryCode', 'phone'].map(id => document.getElementById(id)).filter(Boolean);
+    let hasError = false;
+    inputs.forEach(input => {
+      const errEl = form.querySelector(`[data-error="${input.name}"]`);
+      if (errEl && errEl.textContent) hasError = true;
+    });
+    saveBtn.disabled = hasError;
+  }
+
+  ['firstName', 'lastName', 'email', 'countryCode', 'phone'].forEach(fieldName => {
+    const el = document.getElementById(fieldName);
+    if (el) {
+      el.addEventListener('input', () => {
+        validateField(el);
+        checkFormValidity();
+      });
+      el.addEventListener('blur', () => {
+        validateField(el);
+        checkFormValidity();
+      });
+    }
+  });
+
   form.addEventListener('submit', async event => {
     event.preventDefault();
+    form.querySelectorAll('.field-error').forEach(el => el.textContent = '');
+
+    const inputs = ['firstName', 'lastName', 'email', 'countryCode', 'phone'].map(id => document.getElementById(id)).filter(Boolean);
+    let valid = true;
+    inputs.forEach(input => {
+      if (!validateField(input)) valid = false;
+    });
+    if (!valid) return;
+
     const id = document.getElementById('member-id').value;
     const payload = Object.fromEntries(new FormData(form).entries());
     delete payload.id;
@@ -169,9 +310,15 @@
           const target = form.querySelector(fieldSelector);
           if (target) target.textContent = field.message;
         });
-        throw new Error(response.status === 409 ? 'This member changed since you opened the form. Reload the latest record and try again.' : errorBody?.message || 'Could not save the member. Check the fields and try again.');
+        const msg = response.status === 409
+          ? 'This member changed since you opened the form. Reload the latest record and try again.'
+          : errorBody?.message || 'Could not save the member. Check the fields and try again.';
+        throw new Error(msg);
       }
-      dialog.close(); showNotice(id ? 'Member updated.' : 'Member added.'); await load(true);
+      dialog.close();
+      showNotice(id ? 'Member updated.' : 'Member added.');
+      await load(true);
+      notifySync('MEMBERS_UPDATED');
     } catch (error) { showNotice(error.message, true); }
     finally { submit.disabled = false; submit.textContent = 'Save member'; }
   });
@@ -179,7 +326,10 @@
     if (confirmDialog.returnValue !== 'confirm' || !pendingDelete) return;
     try {
       const response = await fetch(`${apiBase}/members/${encodeURIComponent(pendingDelete)}`, {method:'DELETE',headers:headers()});
-      if (!response.ok) throw new Error('Could not delete this member. Refresh the page and try again.');
+      if (!response.ok) {
+        const errText = await parseErrorMessage(response, 'Could not delete this member. Refresh the page and try again.');
+        throw new Error(errText);
+      }
       deletedMemberId = pendingDelete;
       notice.textContent = 'Member deleted. ';
       const undoBtn = document.createElement('button');
@@ -189,6 +339,7 @@
       notice.appendChild(undoBtn);
       notice.hidden = false;
       await load(true);
+      notifySync('MEMBERS_UPDATED');
     } catch (error) { showNotice(error.message, true); }
     pendingDelete = null;
   });
@@ -196,8 +347,14 @@
     if (!event.target.closest('.undo-button') || !deletedMemberId) return;
     try {
       const response = await fetch(`${apiBase}/members/${encodeURIComponent(deletedMemberId)}/restore`, {method:'POST',headers:headers()});
-      if (!response.ok) throw new Error('Could not restore this member.');
-      deletedMemberId = null; showNotice('Member restored.'); await load(true);
+      if (!response.ok) {
+        const errText = await parseErrorMessage(response, 'Could not restore this member.');
+        throw new Error(errText);
+      }
+      deletedMemberId = null;
+      showNotice('Member restored.');
+      await load(true);
+      notifySync('MEMBERS_UPDATED');
     } catch (error) { showNotice(error.message,true); }
   });
   const query = new URLSearchParams(location.search);

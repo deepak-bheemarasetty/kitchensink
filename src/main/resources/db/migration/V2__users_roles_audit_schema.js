@@ -28,7 +28,7 @@ const schemas = {
         additionalProperties: false,
         properties: {
           _id: { bsonType: "objectId" },
-          name: { bsonType: "string", minLength: 2, maxLength: 30, pattern: "^[a-z0-9-]+$" },
+          name: { bsonType: "string", minLength: 2, maxLength: 30, pattern: "^[a-z0-9 -]+$" },
           description: { bsonType: "string", maxLength: 200 },
           permissions: {
             bsonType: "array", minItems: 1, uniqueItems: true,

@@ -17,12 +17,18 @@ class ValidatorTest {
   @Test
   void firstNameValidation() {
     assertThat(Validator.firstName("John")).isEqualTo("John");
-    assertThatThrownBy(() -> Validator.firstName(null)).isInstanceOf(ValidationException.class);
-    assertThatThrownBy(() -> Validator.firstName("   ")).isInstanceOf(ValidationException.class);
+    assertThatThrownBy(() -> Validator.firstName(null))
+        .isInstanceOf(ValidationException.class)
+        .hasMessage("First Name is required");
+    assertThatThrownBy(() -> Validator.firstName("   "))
+        .isInstanceOf(ValidationException.class)
+        .hasMessage("First Name is required");
     assertThatThrownBy(() -> Validator.firstName("a".repeat(61)))
-        .isInstanceOf(ValidationException.class);
+        .isInstanceOf(ValidationException.class)
+        .hasMessage("First Name must be at most 60 characters");
     assertThatThrownBy(() -> Validator.firstName("John123"))
-        .isInstanceOf(ValidationException.class);
+        .isInstanceOf(ValidationException.class)
+        .hasMessage("First Name contains Invalid Characters, Please Enter a Valid FirstName");
   }
 
   @Test
@@ -32,28 +38,45 @@ class ValidatorTest {
     assertThat(Validator.lastName("  ")).isNull();
     assertThat(Validator.lastName("Smith")).isEqualTo("Smith");
     assertThatThrownBy(() -> Validator.lastName("a".repeat(61)))
-        .isInstanceOf(ValidationException.class);
-    assertThatThrownBy(() -> Validator.lastName("Smith99")).isInstanceOf(ValidationException.class);
+        .isInstanceOf(ValidationException.class)
+        .hasMessage("Last Name must be at most 60 characters");
+    assertThatThrownBy(() -> Validator.lastName("Smith99"))
+        .isInstanceOf(ValidationException.class)
+        .hasMessage("Last Name contains Invalid Characters, Please Enter a Valid LastName");
   }
 
   @Test
   void emailValidation() {
     assertThat(Validator.email("test@example.com")).isEqualTo("test@example.com");
-    assertThatThrownBy(() -> Validator.email(null)).isInstanceOf(ValidationException.class);
-    assertThatThrownBy(() -> Validator.email("bad-email")).isInstanceOf(ValidationException.class);
+    assertThatThrownBy(() -> Validator.email(null))
+        .isInstanceOf(ValidationException.class)
+        .hasMessage("Email Address isn't valid");
+    assertThatThrownBy(() -> Validator.email("bad-email"))
+        .isInstanceOf(ValidationException.class)
+        .hasMessage("Email Address isn't valid");
     assertThatThrownBy(() -> Validator.email("a".repeat(250) + "@b.com"))
-        .isInstanceOf(ValidationException.class);
+        .isInstanceOf(ValidationException.class)
+        .hasMessage("Email Address isn't valid");
   }
 
   @Test
   void phoneValidation() {
     assertThat(Validator.phone("2125551212")).isEqualTo("2125551212");
-    assertThatThrownBy(() -> Validator.phone(null)).isInstanceOf(ValidationException.class);
-    assertThatThrownBy(() -> Validator.phone("0123456")).isInstanceOf(ValidationException.class);
-    assertThatThrownBy(() -> Validator.phone("123")).isInstanceOf(ValidationException.class);
+    assertThatThrownBy(() -> Validator.phone(null))
+        .isInstanceOf(ValidationException.class)
+        .hasMessage("Phone Number is required");
+    assertThatThrownBy(() -> Validator.phone("0123456"))
+        .isInstanceOf(ValidationException.class)
+        .hasMessage("Phone Number Cannot start with a 0");
+    assertThatThrownBy(() -> Validator.phone("123"))
+        .isInstanceOf(ValidationException.class)
+        .hasMessage("Phone Number must contain 6 to 14 digits and cannot start with a 0");
     assertThatThrownBy(() -> Validator.phone("123456789012345"))
-        .isInstanceOf(ValidationException.class);
-    assertThatThrownBy(() -> Validator.phone("abcd12345")).isInstanceOf(ValidationException.class);
+        .isInstanceOf(ValidationException.class)
+        .hasMessage("Phone Number must contain 6 to 14 digits and cannot start with a 0");
+    assertThatThrownBy(() -> Validator.phone("abcd12345"))
+        .isInstanceOf(ValidationException.class)
+        .hasMessage("Phone Number must contain 6 to 14 digits and cannot start with a 0");
   }
 
   @Test
@@ -64,9 +87,15 @@ class ValidatorTest {
     assertThat(Validator.countryCode("1")).isEqualTo("1");
     assertThat(Validator.countryCode("91")).isEqualTo("91");
     assertThat(Validator.countryCode("850")).isEqualTo("850");
+    assertThatThrownBy(() -> Validator.countryCode("01"))
+        .isInstanceOf(ValidationException.class)
+        .hasMessage("Country Code Cannot start with a 0");
     assertThatThrownBy(() -> Validator.countryCode("12345"))
-        .isInstanceOf(ValidationException.class);
-    assertThatThrownBy(() -> Validator.countryCode("abc")).isInstanceOf(ValidationException.class);
+        .isInstanceOf(ValidationException.class)
+        .hasMessage("Country Code must contain 1 to 4 digits and cannot start with a 0");
+    assertThatThrownBy(() -> Validator.countryCode("abc"))
+        .isInstanceOf(ValidationException.class)
+        .hasMessage("Country Code must contain 1 to 4 digits and cannot start with a 0");
   }
 
   @Test
@@ -97,6 +126,8 @@ class ValidatorTest {
   @Test
   void roleNameValidation() {
     assertThat(Validator.roleName("viewer")).isEqualTo("viewer");
+    assertThat(Validator.roleName("custom role")).isEqualTo("custom role");
+    assertThat(Validator.roleName("custom-role-1")).isEqualTo("custom-role-1");
     assertThatThrownBy(() -> Validator.roleName(null)).isInstanceOf(ValidationException.class);
     assertThatThrownBy(() -> Validator.roleName("a")).isInstanceOf(ValidationException.class);
     assertThatThrownBy(() -> Validator.roleName("Invalid Role!"))

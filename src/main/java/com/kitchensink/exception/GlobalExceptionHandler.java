@@ -43,6 +43,7 @@ public class GlobalExceptionHandler {
    */
   @ExceptionHandler(IllegalArgumentException.class)
   public ResponseEntity<Map<String, Object>> handleValidation(IllegalArgumentException exception) {
+    String detail = exception.getMessage() == null ? "is invalid" : exception.getMessage();
     return ResponseEntity.unprocessableEntity()
         .body(
             Map.of(
@@ -51,16 +52,9 @@ public class GlobalExceptionHandler {
                     "code",
                     "VALIDATION_FAILED",
                     "message",
-                    "Request validation failed",
+                    "Request validation failed: " + detail,
                     "fields",
-                    List.of(
-                        Map.of(
-                            "field",
-                            "request",
-                            "message",
-                            exception.getMessage() == null
-                                ? "is invalid"
-                                : exception.getMessage())),
+                    List.of(Map.of("field", "request", "message", detail)),
                     "requestId",
                     MDC.get("requestId") == null ? "unknown" : MDC.get("requestId"))));
   }
@@ -73,6 +67,7 @@ public class GlobalExceptionHandler {
    */
   @ExceptionHandler(ValidationException.class)
   public ResponseEntity<Map<String, Object>> handleFieldValidation(ValidationException exception) {
+    String detail = exception.getMessage() == null ? "is invalid" : exception.getMessage();
     return ResponseEntity.unprocessableEntity()
         .body(
             Map.of(
@@ -81,10 +76,9 @@ public class GlobalExceptionHandler {
                     "code",
                     "VALIDATION_FAILED",
                     "message",
-                    "Request validation failed",
+                    "Request validation failed: " + detail,
                     "fields",
-                    List.of(
-                        Map.of("field", exception.getField(), "message", exception.getMessage())),
+                    List.of(Map.of("field", exception.getField(), "message", detail)),
                     "requestId",
                     MDC.get("requestId") == null ? "unknown" : MDC.get("requestId"))));
   }
@@ -136,9 +130,28 @@ public class GlobalExceptionHandler {
    * @param exception unhandled exception
    * @return internal server error response with sanitized message
    */
-  @ExceptionHandler(Exception.class)
   public ResponseEntity<Map<String, Object>> handleGenericException(Exception exception) {
+    return handleGenericException(exception, null);
+  }
+
+  /**
+   * Catches any unhandled exceptions to prevent stack trace leakage to clients.
+   *
+   * @param exception unhandled exception
+   * @param request current http servlet request
+   * @return internal server error response with sanitized message
+   */
+  @ExceptionHandler(Exception.class)
+  public ResponseEntity<Map<String, Object>> handleGenericException(
+      Exception exception, jakarta.servlet.http.HttpServletRequest request) {
     LOGGER.error("Unhandled exception processing request: ", exception);
+    if (request != null) {
+      String detail = exception.getMessage();
+      if (detail == null || detail.isBlank()) {
+        detail = exception.getClass().getSimpleName();
+      }
+      request.setAttribute("EXECUTION_ERROR_DETAIL", detail);
+    }
     return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
         .body(
             error(
