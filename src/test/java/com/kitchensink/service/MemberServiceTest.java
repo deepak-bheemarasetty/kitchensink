@@ -2,114 +2,203 @@ package com.kitchensink.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.kitchensink.dto.MemberPatchRequest;
 import com.kitchensink.model.Member;
 import com.kitchensink.repository.MemberRepository;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
+import org.bson.Document;
+import org.bson.types.ObjectId;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.TestingAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
- * Tests member registration business rules.
+ * Unit tests for MemberService business logic.
  *
  * @author Deepak Bheemarasetty
  */
-@ExtendWith(MockitoExtension.class)
 class MemberServiceTest {
-  @Mock private MemberRepository memberRepository;
 
-  @InjectMocks private MemberService memberService;
-
-  private Member member;
+  private MemberRepository memberRepository;
+  private MongoTemplate mongoTemplate;
+  private IdentityResolver identityResolver;
+  private MemberService memberService;
 
   @BeforeEach
   void setUp() {
-    member = new Member();
-    member.setName("Jane Doe");
-    member.setEmail("jane@example.com");
-    member.setPhoneNumber("2125551234");
+    memberRepository = mock(MemberRepository.class);
+    mongoTemplate = mock(MongoTemplate.class);
+    identityResolver = mock(IdentityResolver.class);
+    memberService = new MemberService(memberRepository, mongoTemplate, identityResolver);
+
+    TestingAuthenticationToken auth =
+        new TestingAuthenticationToken(
+            "admin",
+            "pwd",
+            List.of(
+                () -> "member:view",
+                () -> "member:create",
+                () -> "member:update",
+                () -> "member:delete"));
+    SecurityContextHolder.getContext().setAuthentication(auth);
+    when(identityResolver.requireActorId(any())).thenReturn(new ObjectId());
+  }
+
+  @AfterEach
+  void tearDown() {
+    SecurityContextHolder.clearContext();
   }
 
   @Test
-  void registerSavesMemberWhenEmailIsNew() {
-    when(memberRepository.findByEmail(member.getEmail())).thenReturn(Optional.empty());
-    when(memberRepository.save(member)).thenReturn(member);
+  void registerSuccess() {
+    Member member = Member.create();
+    member.setFirstName("John");
+    member.setLastName("Doe");
+    member.setEmail("john.doe@example.com");
+    member.setPhone("2125551212");
+    member.setCountryCode("1");
 
-    assertThat(memberService.register(member)).isSameAs(member);
+    when(mongoTemplate.insert(any(Member.class)))
+        .thenAnswer(
+            inv -> {
+              Member m = inv.getArgument(0);
+              m.setId(new ObjectId());
+              return m;
+            });
 
-    verify(memberRepository).save(member);
+    Member saved = memberService.register(member, "key-123");
+    assertThat(saved).isNotNull();
+    assertThat(saved.getMemberId()).startsWith("M-");
+    assertThat(saved.getStatus()).isEqualTo("active");
   }
 
   @Test
-  void registerRejectsExistingEmailWithoutSaving() {
-    when(memberRepository.findByEmail(member.getEmail())).thenReturn(Optional.of(member));
+  void registerDuplicateKeyThrowsDuplicateEmailException() {
+    Member member = Member.create();
+    member.setFirstName("John");
+    member.setLastName("Doe");
+    member.setEmail("john.doe@example.com");
+    member.setPhone("2125551212");
 
+    when(mongoTemplate.insert(any(Member.class))).thenThrow(new DuplicateKeyException("dup"));
+    assertThatThrownBy(() -> memberService.register(member, null))
+        .isInstanceOf(DuplicateEmailException.class);
+  }
+
+  @Test
+  void registerIdempotentReplay() {
+    Member member = Member.create();
+    member.setFirstName("John");
+    member.setEmail("john.doe@example.com");
+    member.setPhone("2125551212");
+
+    ObjectId existingId = new ObjectId();
+    Document prior = new Document("memberId", existingId);
+    when(mongoTemplate.findOne(any(Query.class), eq(Document.class), eq("idempotency_keys")))
+        .thenReturn(prior);
+
+    Member existingMember = Member.create();
+    existingMember.setId(existingId);
+    when(mongoTemplate.findOne(any(Query.class), eq(Member.class))).thenReturn(existingMember);
+
+    Member result = memberService.register(member, "key-prior");
+    assertThat(result.getId()).isEqualTo(existingId);
+  }
+
+  @Test
+  void findByIdAndMemberId() {
+    ObjectId id = new ObjectId();
+    Member member = Member.create();
+    member.setId(id);
+    when(mongoTemplate.findOne(any(Query.class), eq(Member.class))).thenReturn(member);
+
+    assertThat(memberService.findById(id)).isEqualTo(member);
+    assertThat(memberService.findByMemberId("M-1")).isEqualTo(member);
+  }
+
+  @Test
+  void findByEmailSuccessAndGone() {
+    Member member = Member.create();
+    member.setEmail("active@example.com");
+    member.setStatus("active");
+    when(memberRepository.findByEmailLowerAndDeletedAtIsNull("active@example.com"))
+        .thenReturn(Optional.of(member));
+
+    assertThat(memberService.findByEmailActive("active@example.com")).isEqualTo(member);
+
+    member.setStatus("inactive");
+    assertThatThrownBy(() -> memberService.findByEmail("active@example.com"))
+        .isInstanceOf(ResponseStatusException.class);
+  }
+
+  @Test
+  void updateMember() {
+    ObjectId id = new ObjectId();
+    Member current = Member.create();
+    current.setId(id);
+    current.setFirstName("John");
+    current.setLastName("Doe");
+    current.setEmail("john@example.com");
+    current.setPhone("2125551212");
+    current.setStatus("active");
+    current.setVersion(1);
+
+    when(mongoTemplate.findOne(any(Query.class), eq(Member.class))).thenReturn(current);
+    when(mongoTemplate.findAndModify(any(), any(), any(), eq(Member.class))).thenReturn(current);
+
+    MemberPatchRequest patch = new MemberPatchRequest();
+    patch.setFirstName("Johnny");
+    patch.setVersion(1);
+
+    Member updated = memberService.update(id, patch);
+    assertThat(updated).isNotNull();
+  }
+
+  @Test
+  void softDeleteAndRestore() {
+    ObjectId id = new ObjectId();
+    Member member = Member.create();
+    member.setId(id);
+    member.setDeletedAt(java.time.Instant.now());
+    when(mongoTemplate.findAndModify(any(), any(), any(), eq(Member.class))).thenReturn(member);
+
+    memberService.softDelete(id);
+    assertThat(memberService.restore(id)).isEqualTo(member);
+  }
+
+  @Test
+  void searchMembers() {
+    Member member = Member.create();
+    member.setId(new ObjectId());
+    member.setFullNameLower("john doe");
+    member.setEmailLower("john@example.com");
+
+    when(mongoTemplate.find(any(Query.class), eq(Member.class))).thenReturn(List.of(member));
+
+    var page = memberService.search("john", "active", "name", 10, null);
+    assertThat(page.data()).hasSize(1);
+    assertThat(page.hasMore()).isFalse();
+  }
+
+  @Test
+  void permissionDeniedWithoutAuthority() {
+    SecurityContextHolder.getContext()
+        .setAuthentication(new TestingAuthenticationToken("viewer", "pwd", List.of()));
+    Member member = Member.create();
     assertThatThrownBy(() -> memberService.register(member))
-        .isInstanceOf(DuplicateEmailException.class)
-        .hasMessageContaining(member.getEmail());
-    verify(memberRepository, never()).save(member);
-  }
-
-  @Test
-  void concurrentRegistrationRaceIsResolvedByMongoUniqueEmailIndex() throws Exception {
-    CountDownLatch registrationChecksComplete = new CountDownLatch(2);
-    AtomicBoolean firstInsert = new AtomicBoolean(true);
-    when(memberRepository.findByEmail(member.getEmail()))
-        .thenAnswer(
-            invocation -> {
-              registrationChecksComplete.countDown();
-              if (!registrationChecksComplete.await(5, TimeUnit.SECONDS)) {
-                throw new IllegalStateException(
-                    "Concurrent registration did not reach email check");
-              }
-              return Optional.empty();
-            });
-    when(memberRepository.save(member))
-        .thenAnswer(
-            invocation -> {
-              if (firstInsert.compareAndSet(true, false)) {
-                return member;
-              }
-              throw new DuplicateKeyException("Unique email index conflict");
-            });
-
-    ExecutorService executor = Executors.newFixedThreadPool(2);
-    try {
-      List<Future<Member>> registrations =
-          List.of(
-              executor.submit(() -> memberService.register(member)),
-              executor.submit(() -> memberService.register(member)));
-      int saved = 0;
-      int duplicate = 0;
-      for (Future<Member> registration : registrations) {
-        try {
-          assertThat(registration.get()).isSameAs(member);
-          saved++;
-        } catch (ExecutionException exception) {
-          assertThat(exception.getCause()).isInstanceOf(DuplicateEmailException.class);
-          duplicate++;
-        }
-      }
-      assertThat(saved).isEqualTo(1);
-      assertThat(duplicate).isEqualTo(1);
-    } finally {
-      executor.shutdownNow();
-    }
+        .isInstanceOf(AccessDeniedException.class);
   }
 }

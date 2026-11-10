@@ -1,112 +1,161 @@
 package com.kitchensink.controller;
 
+import com.kitchensink.dto.MemberPatchRequest;
 import com.kitchensink.dto.MemberRequest;
+import com.kitchensink.dto.MemberResponse;
 import com.kitchensink.model.Member;
-import com.kitchensink.repository.MemberRepository;
-import com.kitchensink.service.MemberPaginationService;
-import com.kitchensink.service.MemberPaginationService.MemberCursorPage;
 import com.kitchensink.service.MemberService;
-import jakarta.validation.Valid;
+import com.kitchensink.service.MemberService.MemberPage;
+import com.kitchensink.validation.Validator;
+import java.net.URI;
+import java.time.Duration;
 import java.util.List;
+import org.bson.types.ObjectId;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.index.Index;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
- * Exposes REST endpoints for member registration and lookup.
+ * REST API for searching and managing members.
  *
  * @author Deepak Bheemarasetty
  */
 @RestController
-@RequestMapping("/rest/members")
+@RequestMapping("/api/v1/members")
 public class MemberController {
-  /**
-   * Public representation of a member returned by this API.
-   *
-   * @author Deepak Bheemarasetty
-   */
-  public record MemberResponse(String id, String name, String email, String phoneNumber) {}
-
-  /** Cursor links for moving through a bounded member-list response. */
-  public record MemberCursor(String name, String email) {}
-
-  /** A bounded member page and cursor values for adjacent requests. */
-  public record MemberPageResponse(
-      List<MemberResponse> members,
-      boolean hasPrevious,
-      boolean hasNext,
-      MemberCursor previousCursor,
-      MemberCursor nextCursor) {}
-
-  private final MemberPaginationService memberPaginationService;
-  private final MemberRepository memberRepository;
   private final MemberService memberService;
+  private final MongoTemplate mongoTemplate;
 
-  /** Creates the REST controller with bounded member pagination and registration services. */
-  public MemberController(
-      MemberPaginationService memberPaginationService,
-      MemberRepository memberRepository,
-      MemberService memberService) {
-    this.memberPaginationService = memberPaginationService;
-    this.memberRepository = memberRepository;
+  /**
+   * Constructs a new member controller.
+   *
+   * @param memberService member service for business logic
+   * @param mongoTemplate mongo template for persistence operations
+   */
+  public MemberController(MemberService memberService, MongoTemplate mongoTemplate) {
     this.memberService = memberService;
+    this.mongoTemplate = mongoTemplate;
+    mongoTemplate
+        .indexOps("idempotency_keys")
+        .createIndex(new Index().on("key", Sort.Direction.ASC).unique());
+    mongoTemplate
+        .indexOps("idempotency_keys")
+        .createIndex(new Index().on("createdAt", Sort.Direction.ASC).expire(Duration.ofHours(24)));
   }
 
-  /** Lists a bounded member page using forward or backward keyset cursors. */
+  /**
+   * Searches members with cursor-based pagination and filtering.
+   *
+   * @param q optional search term
+   * @param status optional status filter
+   * @param sort sort field
+   * @param limit maximum page size
+   * @param cursor cursor token
+   * @return paginated response containing members and page metadata
+   */
   @GetMapping
-  public MemberPageResponse listAllMembers(
-      @RequestParam(required = false) String afterName,
-      @RequestParam(required = false) String afterEmail,
-      @RequestParam(required = false) String beforeName,
-      @RequestParam(required = false) String beforeEmail) {
-    MemberCursorPage page =
-        memberPaginationService.getPage(afterName, afterEmail, beforeName, beforeEmail);
-    return new MemberPageResponse(
-        page.members().stream().map(this::toResponse).toList(),
-        page.hasPrevious(),
-        page.hasNext(),
-        page.hasPrevious() ? new MemberCursor(page.previousName(), page.previousEmail()) : null,
-        page.hasNext() ? new MemberCursor(page.nextName(), page.nextEmail()) : null);
+  public MemberListResponse search(
+      @RequestParam(required = false) String q,
+      @RequestParam(required = false) String status,
+      @RequestParam(defaultValue = "name") String sort,
+      @RequestParam(defaultValue = "50") int limit,
+      @RequestParam(required = false) String cursor) {
+    MemberPage page = memberService.search(q, status, sort, limit, cursor);
+    List<MemberResponse> responseList = page.data().stream().map(MemberResponse::from).toList();
+    return new MemberListResponse(
+        responseList, new PageMetadata(page.limit(), page.nextCursor(), page.hasMore()));
   }
 
-  /** Looks up a member by its identifier. */
+  /**
+   * Finds a member by formatted member identifier.
+   *
+   * @param memberId formatted member identifier
+   * @return matching member response
+   */
+  @GetMapping("/by-member-id/{memberId}")
+  public MemberResponse findByMemberId(@PathVariable String memberId) {
+    Member member = memberService.findByMemberId(Validator.memberId(memberId));
+    if (member == null) {
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Member not found");
+    }
+    return MemberResponse.from(member);
+  }
+
+  @GetMapping("/by-email/{email:.+}")
+  public MemberResponse findByEmail(@PathVariable String email) {
+    Member member = memberService.findByEmailActive(Validator.email(email));
+    return MemberResponse.from(member);
+  }
+
+  /**
+   * Finds a member by primary key identifier.
+   *
+   * @param id member object id
+   * @return matching member response
+   */
   @GetMapping("/{id}")
-  public ResponseEntity<MemberResponse> lookupMemberById(@PathVariable("id") String id) {
-    return memberRepository
-        .findById(id)
-        .map(this::toResponse)
-        .map(ResponseEntity::ok)
-        .orElseGet(() -> ResponseEntity.notFound().build());
+  public MemberResponse findById(@PathVariable ObjectId id) {
+    Member member = memberService.findById(id);
+    if (member == null) {
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Member not found");
+    }
+    return MemberResponse.from(member);
   }
 
-  /** Validates and registers a member, returning its resource location. */
+  /**
+   * Creates a new member with idempotency guarantee.
+   *
+   * @param idempotencyKey unique key to ensure idempotency
+   * @param request member registration payload
+   * @return created member response with location header
+   */
   @PostMapping
-  public ResponseEntity<MemberResponse> createMember(@Valid @RequestBody MemberRequest request) {
-    Member created = memberService.register(toEntity(request));
-    return ResponseEntity.created(
-            ServletUriComponentsBuilder.fromCurrentRequest()
-                .path("/{id}")
-                .buildAndExpand(created.getId())
-                .toUri())
-        .body(toResponse(created));
+  public ResponseEntity<MemberResponse> create(
+      @RequestHeader("Idempotency-Key") String idempotencyKey, @RequestBody MemberRequest request) {
+    request.validate();
+    Member member = Member.create();
+    member.setFirstName(request.getFirstName());
+    member.setLastName(request.getLastName());
+    member.setEmail(request.getEmail());
+    member.setCountryCode(request.getCountryCode());
+    member.setPhone(request.getPhone());
+    Member created = memberService.register(member, idempotencyKey);
+    return ResponseEntity.created(URI.create("/api/v1/members/" + created.getId()))
+        .body(MemberResponse.from(created));
   }
 
-  private Member toEntity(MemberRequest request) {
-    Member member = new Member();
-    member.setName(request.name());
-    member.setEmail(request.email());
-    member.setPhoneNumber(request.phoneNumber());
-    return member;
+  @PatchMapping("/{id}")
+  public MemberResponse update(@PathVariable ObjectId id, @RequestBody MemberPatchRequest request) {
+    return MemberResponse.from(memberService.update(id, request));
   }
 
-  private MemberResponse toResponse(Member member) {
-    return new MemberResponse(
-        member.getId(), member.getName(), member.getEmail(), member.getPhoneNumber());
+  @DeleteMapping("/{id}")
+  public ResponseEntity<Void> delete(@PathVariable ObjectId id) {
+    memberService.softDelete(id);
+    return ResponseEntity.noContent().build();
   }
+
+  @PostMapping("/{id}/restore")
+  public MemberResponse restore(@PathVariable ObjectId id) {
+    return MemberResponse.from(memberService.restore(id));
+  }
+
+  /** Response representation for paginated member searches. */
+  public record MemberListResponse(List<MemberResponse> data, PageMetadata page) {}
+
+  /** Pagination metadata including limits and cursor position. */
+  public record PageMetadata(int limit, String nextCursor, boolean hasMore) {}
 }

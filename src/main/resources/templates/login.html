@@ -6,11 +6,16 @@
     <title>Sign in - Kitchen Sink Members</title>
     <link rel="stylesheet" th:href="@{/css/styles.css}" />
   </head>
-  <body>
+  <body class="login-page">
     <main class="container small login-container">
+      <div class="login-header">
+        <span class="brand-mark">K</span>
+        <p class="eyebrow">ACCOUNT ACCESS</p>
+      </div>
       <h1>Kitchen Sink Members</h1>
       <p>Sign in securely to manage and find members.</p>
-      <a class="primary" th:href="@{/oauth2/authorization/auth0}">Continue with Auth0</a>
+      <a class="primary login-button" th:href="@{/oauth2/authorization/auth0}">Sign in with Auth0</a>
+      <p class="login-help">Use your organization's Auth0 sign-in page to continue.</p>
     </main>
   </body>
 </html>
