@@ -3,4 +3,8 @@ target/
 documentation/
 .env
 !.env.example
-load-tests/
+load-tests/.env
+load-tests/.keys/
+load-tests/node_modules/
+load-tests/results/
+load-tests/users/
