@@ -14,7 +14,9 @@ import com.kitchensink.dto.MemberResponse;
 import com.kitchensink.model.Member;
 import com.kitchensink.service.IdentityResolver;
 import com.kitchensink.service.MemberService;
+import com.kitchensink.service.RolePermissionService;
 import java.util.List;
+import java.util.Set;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -34,6 +36,7 @@ class ControllersTest {
   private MemberService memberService;
   private MongoTemplate mongoTemplate;
   private IdentityResolver identityResolver;
+  private RolePermissionService rolePermissionService;
   private MemberController memberController;
   private CurrentUserController currentUserController;
 
@@ -42,11 +45,12 @@ class ControllersTest {
     memberService = mock(MemberService.class);
     mongoTemplate = mock(MongoTemplate.class);
     identityResolver = mock(IdentityResolver.class);
+    rolePermissionService = mock(RolePermissionService.class);
     IndexOperations indexOps = mock(IndexOperations.class);
     when(mongoTemplate.indexOps("idempotency_keys")).thenReturn(indexOps);
 
     memberController = new MemberController(memberService, mongoTemplate);
-    currentUserController = new CurrentUserController(identityResolver);
+    currentUserController = new CurrentUserController(identityResolver, rolePermissionService);
   }
 
   @Test
@@ -120,6 +124,9 @@ class ControllersTest {
         new TestingAuthenticationToken(
             "user", "pwd", List.of(() -> "member:view", () -> "user:manage"));
     when(identityResolver.resolveIdentity(auth)).thenReturn("user@example.com");
+    when(rolePermissionService.user("user@example.com"))
+        .thenReturn(
+            new RolePermissionService.UserPermissions(true, Set.of("member:view", "user:manage")));
 
     var resp = currentUserController.currentUser(auth);
     assertThat(resp.username()).isEqualTo("user@example.com");

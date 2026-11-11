@@ -12,6 +12,7 @@ import com.kitchensink.model.Member;
 import com.kitchensink.repository.MemberRepository;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.bson.Document;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.AfterEach;
@@ -35,6 +36,7 @@ class MemberServiceTest {
   private MemberRepository memberRepository;
   private MongoTemplate mongoTemplate;
   private IdentityResolver identityResolver;
+  private RolePermissionService rolePermissionService;
   private MemberService memberService;
 
   @BeforeEach
@@ -42,7 +44,21 @@ class MemberServiceTest {
     memberRepository = mock(MemberRepository.class);
     mongoTemplate = mock(MongoTemplate.class);
     identityResolver = mock(IdentityResolver.class);
-    memberService = new MemberService(memberRepository, mongoTemplate, identityResolver);
+    rolePermissionService = mock(RolePermissionService.class);
+    when(rolePermissionService.user(any()))
+        .thenReturn(
+            new RolePermissionService.UserPermissions(
+                true,
+                Set.of(
+                    "member:view",
+                    "member:create",
+                    "member:update",
+                    "member:delete",
+                    "user:manage",
+                    "role:manage")));
+    when(identityResolver.resolveIdentity(any())).thenReturn("admin");
+    memberService =
+        new MemberService(memberRepository, mongoTemplate, identityResolver, rolePermissionService);
 
     TestingAuthenticationToken auth =
         new TestingAuthenticationToken(
@@ -195,8 +211,13 @@ class MemberServiceTest {
 
   @Test
   void permissionDeniedWithoutAuthority() {
-    SecurityContextHolder.getContext()
-        .setAuthentication(new TestingAuthenticationToken("viewer", "pwd", List.of()));
+    TestingAuthenticationToken token = new TestingAuthenticationToken("viewer", "pwd", List.of());
+    SecurityContextHolder.getContext().setAuthentication(token);
+    when(identityResolver.resolveIdentity(token)).thenReturn("viewer");
+    when(rolePermissionService.user("viewer"))
+        .thenReturn(
+            new RolePermissionService.UserPermissions(false, java.util.Collections.emptySet()));
+
     Member member = Member.create();
     assertThatThrownBy(() -> memberService.register(member))
         .isInstanceOf(AccessDeniedException.class);

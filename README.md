@@ -334,13 +334,13 @@ java -jar target/kitchensink.jar --server.port=9081
 
 ## Browser UI
 
-The browser UI is available under the `/kitchensink` context path. OAuth sign-in uses Auth0, then maps the identity email to an active local account and its database roles. Members, Users, and Roles navigation and controls are rendered only when the corresponding permission is present.
+The browser UI is available under the `/kitchensink` context path. OAuth sign-in uses Auth0, then maps the identity email to an active local account and its database roles. Members, Users, and Roles navigation and controls are rendered dynamically when the corresponding permission is present; changes made to user permissions or roles are dynamically resolved on every page refresh or `/api/v1/me` call, syncing button states (such as Add, Edit, and Delete) without requiring re-authentication.
 
 - `/kitchensink/` redirects to the first permitted workspace.
 - `/kitchensink/members` shows a searchable member directory with status filtering, keyset Load more pagination, and responsive mobile cards. Permission-gated add, edit, and delete actions use the existing `/api/v1/members` API.
 - `/kitchensink/users` manages local account role assignments and active status. `/kitchensink/roles` reviews and updates role permissions.
 
-Member add and edit share a responsive drawer. The UI displays loading, empty, success, and error states; server validation and authorization remain authoritative.
+Member add and edit share a responsive drawer. The UI displays loading, empty, success, and error states; server validation and authorization remain authoritative. Cross-tab synchronization via `BroadcastChannel` (with `localStorage` fallback) automatically refreshes lists and updates UI permission controls when records, users, or roles are updated in other tabs.
 
 ## Member API
 
@@ -397,9 +397,30 @@ REST endpoints accept Auth0 JWT bearer tokens; browser UI requests use the OAuth
 
 ## Operational metrics
 
-Spring Boot Actuator exposes JWT-protected `/kitchensink/actuator/health` and `/kitchensink/actuator/metrics` endpoints. Health details are hidden. MongoDB driver metrics expose database command counts and durations, tagged by database, collection, command, and status. Connection-pool gauges expose checked-out connections, total pool size, wait-queue size, and checkout failures. The checked-out gauge and configured pool maximum can be used to calculate utilization; the MongoDB driver's default maximum is 100 unless overridden in the connection URI. Obtain an Auth0 access token for the configured API audience before using these examples:
+Spring Boot Actuator exposes JWT-protected `/kitchensink/actuator/health`, `/kitchensink/actuator/metrics`, `/kitchensink/actuator/api-metrics`, and `/kitchensink/actuator/db-metrics` endpoints. Health details are hidden.
+
+### Dedicated API and DB Metrics Endpoints
+
+In addition to standard Actuator metrics, the application provides specialized, formatted endpoints tracking operational statistics rounded to 3 decimal places:
+
+- **Per-API Metrics (`/kitchensink/actuator/api-metrics`)**: Tracks controller REST API execution durations (`app.api.requests`), grouped by HTTP method, URI route template, and status. It exposes:
+  - `count`: Total request count
+  - `totalTimeSeconds`: Cumulative latency in seconds (to 3 decimal places)
+  - `minSeconds`, `avgSeconds`, `maxSeconds`: Minimum, average, and maximum response times
+  - `p50Seconds`, `p95Seconds`, `p99Seconds`: 50th, 95th, and 99th percentile latencies
+- **Per-DB Metrics (`/kitchensink/actuator/db-metrics`)**: Tracks MongoDB database operations (`app.db.operations`) recorded by the custom MongoDB event execution listener, grouped by operation, model/collection, and status (e.g. `success`). It exposes:
+  - `count`: Total invocation count
+  - `totalTimeSeconds`: Cumulative execution time in seconds
+  - `minSeconds`, `avgSeconds`, `maxSeconds`, `p50Seconds`, `p95Seconds`, `p99Seconds`
+
+Obtain an Auth0 access token for the configured API audience before using these examples:
 
 ```shell
+# Specialized per-route API & DB metrics
+curl --header 'Authorization: Bearer REPLACE_WITH_ACCESS_TOKEN' 'http://localhost:9080/kitchensink/actuator/api-metrics'
+curl --header 'Authorization: Bearer REPLACE_WITH_ACCESS_TOKEN' 'http://localhost:9080/kitchensink/actuator/db-metrics'
+
+# Standard Actuator metric meters
 curl --header 'Authorization: Bearer REPLACE_WITH_ACCESS_TOKEN' 'http://localhost:9080/kitchensink/actuator/metrics/http.server.requests'
 curl --header 'Authorization: Bearer REPLACE_WITH_ACCESS_TOKEN' 'http://localhost:9080/kitchensink/actuator/metrics/mongodb.driver.commands'
 curl --header 'Authorization: Bearer REPLACE_WITH_ACCESS_TOKEN' 'http://localhost:9080/kitchensink/actuator/metrics/mongodb.driver.commands?tag=database:kitchensink&tag=collection:members&tag=command:find'

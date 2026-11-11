@@ -13,9 +13,14 @@ import org.slf4j.MDC;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
@@ -122,6 +127,79 @@ public class GlobalExceptionHandler {
     }
     return ResponseEntity.status(HttpStatus.CONFLICT)
         .body(error(HttpStatus.CONFLICT, "The request conflicts with existing data"));
+  }
+
+  /**
+   * Returns a 400 Bad Request when request body cannot be parsed or JSON is malformed.
+   *
+   * @param exception message not readable exception
+   * @return bad request response
+   */
+  @ExceptionHandler(HttpMessageNotReadableException.class)
+  public ResponseEntity<Map<String, Object>> handleMessageNotReadable(
+      HttpMessageNotReadableException exception) {
+    return ResponseEntity.badRequest()
+        .body(error(HttpStatus.BAD_REQUEST, "Malformed JSON or unreadable request body"));
+  }
+
+  /**
+   * Returns a 400 Bad Request when a required header (such as Idempotency-Key) is missing.
+   *
+   * @param exception missing header exception
+   * @return bad request response
+   */
+  @ExceptionHandler(MissingRequestHeaderException.class)
+  public ResponseEntity<Map<String, Object>> handleMissingHeader(
+      MissingRequestHeaderException exception) {
+    return ResponseEntity.badRequest()
+        .body(
+            error(HttpStatus.BAD_REQUEST, "Required header missing: " + exception.getHeaderName()));
+  }
+
+  /**
+   * Returns a 400 Bad Request when path variable or query parameter format is invalid.
+   *
+   * @param exception type mismatch exception
+   * @return bad request response
+   */
+  @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+  public ResponseEntity<Map<String, Object>> handleTypeMismatch(
+      MethodArgumentTypeMismatchException exception) {
+    String paramName = exception.getName();
+    return ResponseEntity.badRequest()
+        .body(error(HttpStatus.BAD_REQUEST, "Invalid format for parameter: " + paramName));
+  }
+
+  /**
+   * Returns a 405 Method Not Allowed when an unsupported HTTP method is invoked on an endpoint.
+   *
+   * @param exception method not supported exception
+   * @return method not allowed response
+   */
+  @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+  public ResponseEntity<Map<String, Object>> handleMethodNotSupported(
+      HttpRequestMethodNotSupportedException exception) {
+    return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
+        .body(
+            error(
+                HttpStatus.METHOD_NOT_ALLOWED,
+                "HTTP method not allowed: " + exception.getMethod()));
+  }
+
+  /**
+   * Returns a 415 Unsupported Media Type when payload content-type is unsupported.
+   *
+   * @param exception media type not supported exception
+   * @return unsupported media type response
+   */
+  @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+  public ResponseEntity<Map<String, Object>> handleMediaTypeNotSupported(
+      HttpMediaTypeNotSupportedException exception) {
+    return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
+        .body(
+            error(
+                HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+                "Unsupported media type: " + exception.getContentType()));
   }
 
   /**

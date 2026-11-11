@@ -1,5 +1,7 @@
 package com.kitchensink.controller;
 
+import com.kitchensink.service.IdentityResolver;
+import com.kitchensink.service.RolePermissionService;
 import java.util.List;
 import java.util.Map;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -16,9 +18,23 @@ import org.springframework.web.bind.annotation.GetMapping;
 @Controller
 public class MemberViewController {
   private final MongoTemplate mongoTemplate;
+  private final IdentityResolver identityResolver;
+  private final RolePermissionService rolePermissionService;
 
-  public MemberViewController(MongoTemplate mongoTemplate) {
+  /**
+   * Constructs the member view controller with required dependencies.
+   *
+   * @param mongoTemplate template used for direct database inquiries (e.g. registration codes)
+   * @param identityResolver resolver for extracting canonical username
+   * @param rolePermissionService service for dynamic authorization and permission lookups
+   */
+  public MemberViewController(
+      MongoTemplate mongoTemplate,
+      IdentityResolver identityResolver,
+      RolePermissionService rolePermissionService) {
     this.mongoTemplate = mongoTemplate;
+    this.identityResolver = identityResolver;
+    this.rolePermissionService = rolePermissionService;
   }
 
   /**
@@ -113,21 +129,15 @@ public class MemberViewController {
   }
 
   private void addShell(Authentication authentication, Model model) {
+    String username = identityResolver.resolveIdentity(authentication);
+    RolePermissionService.UserPermissions user = rolePermissionService.user(username);
     List<String> permissions =
-        authentication.getAuthorities().stream()
-            .map(authority -> authority.getAuthority())
-            .filter(value -> value.startsWith("member:") || value.endsWith(":manage"))
-            .sorted()
-            .toList();
-    String username = authentication.getName();
-    if (authentication
-        instanceof
-        org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken oauth) {
-      String email = oauth.getPrincipal().getAttribute("email");
-      if (email != null) {
-        username = email;
-      }
-    }
+        user.active()
+            ? user.permissions().stream()
+                .filter(value -> value.startsWith("member:") || value.endsWith(":manage"))
+                .sorted()
+                .toList()
+            : List.of();
     model.addAttribute("username", username);
     model.addAttribute("permissions", permissions);
     model.addAttribute("canCreate", permissions.contains("member:create"));
@@ -138,8 +148,11 @@ public class MemberViewController {
   }
 
   private boolean has(Authentication authentication, String permission) {
-    return authentication != null
-        && authentication.getAuthorities().stream()
-            .anyMatch(authority -> permission.equals(authority.getAuthority()));
+    if (authentication == null || !authentication.isAuthenticated()) {
+      return false;
+    }
+    String username = identityResolver.resolveIdentity(authentication);
+    RolePermissionService.UserPermissions user = rolePermissionService.user(username);
+    return user.active() && user.permissions().contains(permission);
   }
 }
