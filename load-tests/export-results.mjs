@@ -241,3 +241,4 @@ generateReport().catch(err => {
   console.error('[Excel Export] Error:', err);
   process.exit(1);
 });
+
