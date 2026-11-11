@@ -7,7 +7,8 @@
     "smoke": "node smoke-test.mjs",
     "seed-users": "node seed-100-users.mjs",
     "seed-members": "node seed-30k-members.mjs",
-    "load": "node runner.mjs"
+    "load": "node runner.mjs",
+    "export-results": "node export-results.mjs"
   },
   "dependencies": {
     "dotenv": "^16.4.7",
