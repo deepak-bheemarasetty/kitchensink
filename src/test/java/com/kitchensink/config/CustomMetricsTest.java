@@ -52,7 +52,10 @@ class CustomMetricsTest {
         registry
             .find("app.api.requests")
             .tag("api", "GET /api/v1/members/{id}")
+            .tag("method", "GET")
+            .tag("uri", "/api/v1/members/{id}")
             .tag("status", "200")
+            .tag("outcome", "success")
             .tag("application-name", "kitchensink")
             .timer();
 
@@ -138,7 +141,7 @@ class CustomMetricsTest {
   void apiMetricsFilterHandlesRootContextPath() throws ServletException, IOException {
     CustomApiMetricsFilter filter = new CustomApiMetricsFilter(registry, "kitchensink");
 
-    MockHttpServletRequest request = new MockHttpServletRequest("GET", "/");
+    MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/roles");
     request.setContextPath("");
     MockHttpServletResponse response = new MockHttpServletResponse();
     response.setStatus(200);
@@ -149,12 +152,22 @@ class CustomMetricsTest {
     Timer timer =
         registry
             .find("app.api.requests")
-            .tag("api", "GET /")
+            .tag("api", "GET /api/v1/roles")
+            .tag("method", "GET")
+            .tag("uri", "/api/v1/roles")
             .tag("status", "200")
+            .tag("outcome", "success")
             .tag("application-name", "kitchensink")
             .timer();
 
     assertThat(timer).isNotNull();
+
+    // Verify non-api/v1 paths (like static resources or UI /) are ignored
+    MockHttpServletRequest uiRequest = new MockHttpServletRequest("GET", "/members");
+    uiRequest.setContextPath("");
+    filter.doFilter(uiRequest, response, chain);
+    Timer uiTimer = registry.find("app.api.requests").tag("api", "GET /members").timer();
+    assertThat(uiTimer).isNull();
   }
 
   @Test
@@ -200,5 +213,144 @@ class CustomMetricsTest {
       when(internalCmd.getCommandName()).thenReturn(cmd);
       listener.commandStarted(internalCmd);
     }
+  }
+
+  @Test
+  void apiMetricsEndpointFormatsMetricsWithPrecisionAndPercentiles()
+      throws ServletException, IOException {
+    CustomApiMetricsFilter filter = new CustomApiMetricsFilter(registry, "kitchensink");
+
+    // Simulate 4 GET /api/v1/members calls (success)
+    for (int i = 0; i < 4; i++) {
+      MockHttpServletRequest getReq =
+          new MockHttpServletRequest("GET", "/kitchensink/api/v1/members");
+      getReq.setContextPath("/kitchensink");
+      MockHttpServletResponse getRes = new MockHttpServletResponse();
+      getRes.setStatus(200);
+      filter.doFilter(getReq, getRes, (req, res) -> {});
+    }
+
+    // Simulate 2 POST /api/v1/members calls (success)
+    for (int i = 0; i < 2; i++) {
+      MockHttpServletRequest postReq =
+          new MockHttpServletRequest("POST", "/kitchensink/api/v1/members");
+      postReq.setContextPath("/kitchensink");
+      MockHttpServletResponse postRes = new MockHttpServletResponse();
+      postRes.setStatus(201);
+      filter.doFilter(postReq, postRes, (req, res) -> {});
+    }
+
+    // Simulate 1 POST /api/v1/users calls (failed)
+    MockHttpServletRequest failedReq =
+        new MockHttpServletRequest("POST", "/kitchensink/api/v1/users");
+    failedReq.setContextPath("/kitchensink");
+    MockHttpServletResponse failedRes = new MockHttpServletResponse();
+    failedRes.setStatus(400);
+    filter.doFilter(failedReq, failedRes, (req, res) -> {});
+
+    ApiMetricsEndpoint endpoint = new ApiMetricsEndpoint(registry);
+    var metrics = endpoint.getApiMetrics();
+
+    assertThat(metrics).isNotEmpty();
+    assertThat(metrics).hasSize(3);
+
+    // Verify GET /api/v1/members
+    var getMembers =
+        metrics.stream()
+            .filter(m -> "GET".equals(m.method()) && "/api/v1/members".equals(m.uri()))
+            .findFirst()
+            .orElse(null);
+    assertThat(getMembers).isNotNull();
+    assertThat(getMembers.count()).isEqualTo(4);
+    assertThat(getMembers.status()).isEqualTo("200");
+    assertThat(getMembers.outcome()).isEqualTo("success");
+    assertThat(getMembers.totalTimeSeconds()).isGreaterThanOrEqualTo(0.0);
+    assertThat(getMembers.maxSeconds()).isGreaterThanOrEqualTo(0.0);
+    assertThat(getMembers.p95Seconds()).isGreaterThanOrEqualTo(0.0);
+
+    // Verify POST /api/v1/members
+    var postMembers =
+        metrics.stream()
+            .filter(m -> "POST".equals(m.method()) && "/api/v1/members".equals(m.uri()))
+            .findFirst()
+            .orElse(null);
+    assertThat(postMembers).isNotNull();
+    assertThat(postMembers.count()).isEqualTo(2);
+    assertThat(postMembers.status()).isEqualTo("201");
+    assertThat(postMembers.outcome()).isEqualTo("success");
+
+    // Verify POST /api/v1/users
+    var postUsers =
+        metrics.stream()
+            .filter(m -> "POST".equals(m.method()) && "/api/v1/users".equals(m.uri()))
+            .findFirst()
+            .orElse(null);
+    assertThat(postUsers).isNotNull();
+    assertThat(postUsers.count()).isEqualTo(1);
+    assertThat(postUsers.status()).isEqualTo("400");
+    assertThat(postUsers.outcome()).isEqualTo("failed");
+  }
+
+  @Test
+  void dbMetricsEndpointFormatsMetricsWithPrecisionAndPercentiles() {
+    final CustomDbMetricsConfiguration.CustomDbMetricsCommandListener listener =
+        new CustomDbMetricsConfiguration.CustomDbMetricsCommandListener(registry, "kitchensink");
+
+    // Simulate 3 find operations on members (SUCCESS)
+    for (int i = 0; i < 3; i++) {
+      BsonDocument findDoc = new BsonDocument("find", new BsonString("members"));
+      CommandStartedEvent start = mock(CommandStartedEvent.class);
+      when(start.getRequestId()).thenReturn(300 + i);
+      when(start.getCommandName()).thenReturn("find");
+      when(start.getCommand()).thenReturn(findDoc);
+      listener.commandStarted(start);
+
+      CommandSucceededEvent success = mock(CommandSucceededEvent.class);
+      when(success.getRequestId()).thenReturn(300 + i);
+      when(success.getCommandName()).thenReturn("find");
+      when(success.getElapsedTime(TimeUnit.NANOSECONDS)).thenReturn(10_000_000L);
+      listener.commandSucceeded(success);
+    }
+
+    // Simulate 1 insert operation on users (FAILED)
+    BsonDocument insertDoc = new BsonDocument("insert", new BsonString("users"));
+    CommandStartedEvent startFail = mock(CommandStartedEvent.class);
+    when(startFail.getRequestId()).thenReturn(400);
+    when(startFail.getCommandName()).thenReturn("insert");
+    when(startFail.getCommand()).thenReturn(insertDoc);
+    listener.commandStarted(startFail);
+
+    CommandFailedEvent fail = mock(CommandFailedEvent.class);
+    when(fail.getRequestId()).thenReturn(400);
+    when(fail.getCommandName()).thenReturn("insert");
+    when(fail.getElapsedTime(TimeUnit.NANOSECONDS)).thenReturn(5_000_000L);
+    listener.commandFailed(fail);
+
+    DbMetricsEndpoint endpoint = new DbMetricsEndpoint(registry);
+    var dbSummaries = endpoint.getDbMetrics();
+
+    assertThat(dbSummaries).isNotEmpty();
+    assertThat(dbSummaries).hasSize(2);
+
+    var membersFind =
+        dbSummaries.stream()
+            .filter(m -> "members".equals(m.model()) && "find".equals(m.method()))
+            .findFirst()
+            .orElse(null);
+    assertThat(membersFind).isNotNull();
+    assertThat(membersFind.count()).isEqualTo(3);
+    assertThat(membersFind.status()).isEqualTo("SUCCESS");
+    assertThat(membersFind.totalTimeSeconds()).isGreaterThanOrEqualTo(0.0);
+    assertThat(membersFind.maxSeconds()).isGreaterThanOrEqualTo(0.0);
+    assertThat(membersFind.p95Seconds()).isGreaterThanOrEqualTo(0.0);
+
+    var usersInsert =
+        dbSummaries.stream()
+            .filter(m -> "users".equals(m.model()) && "insert".equals(m.method()))
+            .findFirst()
+            .orElse(null);
+    assertThat(usersInsert).isNotNull();
+    assertThat(usersInsert.count()).isEqualTo(1);
+    assertThat(usersInsert.status()).isEqualTo("FAILED");
   }
 }

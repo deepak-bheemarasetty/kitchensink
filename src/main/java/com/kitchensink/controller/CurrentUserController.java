@@ -1,6 +1,7 @@
 package com.kitchensink.controller;
 
 import com.kitchensink.service.IdentityResolver;
+import com.kitchensink.service.RolePermissionService;
 import java.util.List;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -14,9 +15,12 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class CurrentUserController {
   private final IdentityResolver identityResolver;
+  private final RolePermissionService rolePermissionService;
 
-  public CurrentUserController(IdentityResolver identityResolver) {
+  public CurrentUserController(
+      IdentityResolver identityResolver, RolePermissionService rolePermissionService) {
     this.identityResolver = identityResolver;
+    this.rolePermissionService = rolePermissionService;
   }
 
   /**
@@ -27,13 +31,15 @@ public class CurrentUserController {
    */
   @GetMapping("/api/v1/me")
   public CurrentUserResponse currentUser(Authentication authentication) {
-    List<String> permissions =
-        authentication.getAuthorities().stream()
-            .map(authority -> authority.getAuthority())
-            .filter(value -> value.startsWith("member:") || value.endsWith(":manage"))
-            .sorted()
-            .toList();
     String username = identityResolver.resolveIdentity(authentication);
+    RolePermissionService.UserPermissions user = rolePermissionService.user(username);
+    List<String> permissions =
+        user.active()
+            ? user.permissions().stream()
+                .filter(value -> value.startsWith("member:") || value.endsWith(":manage"))
+                .sorted()
+                .toList()
+            : List.of();
     return new CurrentUserResponse(username, permissions);
   }
 

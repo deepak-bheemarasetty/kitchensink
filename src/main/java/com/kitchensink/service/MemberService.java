@@ -40,6 +40,7 @@ public class MemberService {
   private final MemberRepository memberRepository;
   private final MongoTemplate mongoTemplate;
   private final IdentityResolver identityResolver;
+  private final RolePermissionService rolePermissionService;
 
   /**
    * Constructs the MemberService with required repositories and resolvers.
@@ -47,14 +48,17 @@ public class MemberService {
    * @param memberRepository member persistence repository
    * @param mongoTemplate Mongo operations template
    * @param identityResolver authenticated identity and actor resolver
+   * @param rolePermissionService role and permissions resolution service
    */
   public MemberService(
       MemberRepository memberRepository,
       MongoTemplate mongoTemplate,
-      IdentityResolver identityResolver) {
+      IdentityResolver identityResolver,
+      RolePermissionService rolePermissionService) {
     this.memberRepository = memberRepository;
     this.mongoTemplate = mongoTemplate;
     this.identityResolver = identityResolver;
+    this.rolePermissionService = rolePermissionService;
   }
 
   /**
@@ -84,10 +88,8 @@ public class MemberService {
       }
     }
     member.setFirstName(Validator.firstName(member.getFirstName()));
-    member.setLastName(Validator.lastName(member.getLastName()));
-    if (member.getLastName() == null || member.getLastName().isBlank()) {
-      member.setLastName(null);
-    }
+    String validatedLastName = Validator.lastName(member.getLastName());
+    member.setLastName(validatedLastName == null ? "" : validatedLastName);
     member.setPhone(Validator.phone(member.getPhone()));
     member.setCountryCode(Validator.countryCode(member.getCountryCode()));
     member.setEmail(Validator.email(member.getEmail()));
@@ -119,22 +121,13 @@ public class MemberService {
                 .append("createdAt", new Date()),
             "idempotency_keys");
       }
-      audit(
-          "member.create",
-          saved,
-          Map.of(
-              "after",
-              Map.of(
-                  "firstName",
-                  saved.getFirstName(),
-                  "lastName",
-                  saved.getLastName(),
-                  "email",
-                  saved.getEmail(),
-                  "phone",
-                  saved.getPhone(),
-                  "status",
-                  saved.getStatus())));
+      java.util.Map<String, Object> afterDetails = new java.util.LinkedHashMap<>();
+      afterDetails.put("firstName", saved.getFirstName());
+      afterDetails.put("lastName", saved.getLastName() == null ? "" : saved.getLastName());
+      afterDetails.put("email", saved.getEmail());
+      afterDetails.put("phone", saved.getPhone());
+      afterDetails.put("status", saved.getStatus());
+      audit("member.create", saved, Map.of("after", afterDetails));
       return saved;
     } catch (DuplicateKeyException exception) {
       throw new DuplicateEmailException("Email already registered: " + member.getEmail());
@@ -456,10 +449,12 @@ public class MemberService {
 
   private void requirePermission(String permission) {
     Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-    if (authentication == null
-        || !authentication.isAuthenticated()
-        || authentication.getAuthorities().stream()
-            .noneMatch(authority -> authority.getAuthority().equals(permission))) {
+    if (authentication == null || !authentication.isAuthenticated()) {
+      throw new AccessDeniedException("Authentication required");
+    }
+    String identity = identityResolver.resolveIdentity(authentication);
+    RolePermissionService.UserPermissions user = rolePermissionService.user(identity);
+    if (!user.active() || !user.permissions().contains(permission)) {
       throw new AccessDeniedException("You do not have permission");
     }
   }

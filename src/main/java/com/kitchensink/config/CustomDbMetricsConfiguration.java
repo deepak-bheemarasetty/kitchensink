@@ -84,6 +84,8 @@ public class CustomDbMetricsConfiguration {
           .tag("method", repoMethod)
           .tag("status", status)
           .tag("application-name", applicationName)
+          .publishPercentiles(0.5, 0.95, 0.99)
+          .publishPercentileHistogram()
           .register(meterRegistry)
           .record(durationNanos, TimeUnit.NANOSECONDS);
     }

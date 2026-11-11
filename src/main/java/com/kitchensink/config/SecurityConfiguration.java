@@ -59,7 +59,19 @@ public class SecurityConfiguration {
     JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
     converter.setJwtGrantedAuthoritiesConverter(
         jwt -> {
+          // Verify email_verified is true to avoid unverified account takeover
+          Object verifiedClaim = jwt.getClaims().get("email_verified");
+          boolean isVerified =
+              (verifiedClaim instanceof Boolean b && b)
+                  || "true".equalsIgnoreCase(String.valueOf(verifiedClaim));
+          if (!isVerified) {
+            return List.of();
+          }
+
           String username = jwt.getClaimAsString("email");
+          if (username == null) {
+            username = jwt.getClaimAsString("https://kitchensink/email");
+          }
           if (username == null) {
             username = jwt.getSubject();
           }
@@ -83,20 +95,34 @@ public class SecurityConfiguration {
       for (var authority : authorities) {
         mapped.add(authority);
         String email = null;
+        boolean emailVerified = false;
         if (authority instanceof OidcUserAuthority oidcAuthority) {
+          Object verifiedClaim =
+              oidcAuthority.getUserInfo() == null
+                  ? oidcAuthority.getIdToken().getClaims().get("email_verified")
+                  : oidcAuthority.getUserInfo().getClaims().get("email_verified");
+          emailVerified =
+              (verifiedClaim instanceof Boolean b && b)
+                  || "true".equalsIgnoreCase(String.valueOf(verifiedClaim));
           email =
               oidcAuthority.getUserInfo() == null
                   ? oidcAuthority.getIdToken().getClaimAsString("email")
                   : oidcAuthority.getUserInfo().getEmail();
         } else if (authority instanceof OAuth2UserAuthority oauthAuthority) {
+          Object verifiedClaim = oauthAuthority.getAttributes().get("email_verified");
+          emailVerified =
+              (verifiedClaim instanceof Boolean b && b)
+                  || "true".equalsIgnoreCase(String.valueOf(verifiedClaim));
           Object value = oauthAuthority.getAttributes().get("email");
           if (value instanceof String emailValue) {
             email = emailValue;
           }
         }
-        if (email != null) {
+        if (email != null && emailVerified) {
           RolePermissionService.UserPermissions user = permissions.user(email);
-          user.permissions().stream().map(SimpleGrantedAuthority::new).forEach(mapped::add);
+          if (user.active()) {
+            user.permissions().stream().map(SimpleGrantedAuthority::new).forEach(mapped::add);
+          }
         }
       }
       return mapped;
@@ -221,7 +247,13 @@ public class SecurityConfiguration {
                     .hasAuthority("role:manage")
                     .requestMatchers(HttpMethod.DELETE, "/api/v1/roles/**")
                     .hasAuthority("role:manage")
-                    .requestMatchers("/actuator/metrics", "/actuator/metrics/**")
+                    .requestMatchers(
+                        "/actuator/metrics",
+                        "/actuator/metrics/**",
+                        "/actuator/api-metrics",
+                        "/actuator/api-metrics/**",
+                        "/actuator/db-metrics",
+                        "/actuator/db-metrics/**")
                     .hasAuthority("role:manage")
                     .requestMatchers("/actuator", "/actuator/health", "/actuator/info")
                     .authenticated()
