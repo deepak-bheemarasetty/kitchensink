@@ -262,11 +262,11 @@ The Docker setup runs both the application and MongoDB in containers; you do not
 Clone this branch on a new machine, or switch an existing checkout to it:
 
 ```powershell
-git clone --branch migration-docker https://github.com/deepak-bheemarasetty/kitchensink.git
+git clone --branch migration-main-docker https://github.com/deepak-bheemarasetty/kitchensink.git
 Set-Location kitchensink
 ```
 
-For an existing checkout, run `git switch migration-docker` from the repository root instead.
+For an existing checkout, run `git switch migration-main-docker` from the repository root instead.
 
 Create a local Compose environment file from the template. It contains placeholders only; fill them with your Auth0 tenant, Regular Web Application, and API values. Never commit `.env` or share the client secret.
 
