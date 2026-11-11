@@ -2,8 +2,10 @@ import http from 'node:http';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const KEY_DIR = path.resolve('.keys');
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const KEY_DIR = path.resolve(__dirname, '.keys');
 const PRIV_KEY_PATH = path.join(KEY_DIR, 'private.pem');
 const PUB_KEY_PATH = path.join(KEY_DIR, 'public.pem');
 
@@ -64,6 +66,7 @@ export function generateToken(email, expiresInSeconds = 7200) {
     sub: email,
     aud: AUDIENCE,
     email: email,
+    email_verified: true,
     iat: now,
     exp: now + expiresInSeconds,
   };

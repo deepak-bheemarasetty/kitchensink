@@ -4,6 +4,9 @@
   "type": "module",
   "scripts": {
     "generate-users": "node --openssl-legacy-provider generate-auth0-users.mjs",
+    "smoke": "node smoke-test.mjs",
+    "seed-users": "node seed-100-users.mjs",
+    "seed-members": "node seed-30k-members.mjs",
     "load": "node runner.mjs"
   },
   "dependencies": {

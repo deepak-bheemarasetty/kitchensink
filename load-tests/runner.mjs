@@ -1,9 +1,14 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { MongoClient, ObjectId } from 'mongodb';
 import { startMockAuthServer, stopMockAuthServer, generateToken } from './mock-auth.mjs';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.resolve(__dirname, '.env') });
+
 const baseUrl = (process.env.BASE_URL || 'http://localhost:9081/kitchensink').replace(/\/$/, '');
-const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/kitchensink?replicaSet=rs0';
+const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/kitchensink_loadtest?replicaSet=rs0';
 
 // Configuration
 const DURATION_SECONDS = parseInt(process.env.LOAD_MEASURE_SECONDS || '10', 10);

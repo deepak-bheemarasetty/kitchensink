@@ -1,7 +1,12 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { MongoClient, ObjectId } from 'mongodb';
 
-const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/kitchensink?replicaSet=rs0';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.resolve(__dirname, '.env') });
+
+const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/kitchensink_loadtest?replicaSet=rs0';
 
 /**
  * Seeds or tops-up the baseline members collection to targetCount using the member.0#####@load.test pattern.
