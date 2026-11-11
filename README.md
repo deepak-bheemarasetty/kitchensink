@@ -260,6 +260,18 @@ The application uses port `9080` by default. You can override it at startup, for
 java -jar target/kitchensink.jar --server.port=9081
 ```
 
+## Load Testing
+
+The `migration-load-test` branch includes a dedicated Node.js-based load testing harness located in [`load-tests/`](load-tests/README.md).
+
+It exercises the authenticated Member REST API across multiple concurrency scenarios (e.g. 5, 10, 20 workers) with realistic traffic distributions (e.g., 80% read / 20% write) against exact baseline populations (10,000 to 15,000 members) and measures:
+- End-to-end client latency (p50, p95, p99, min, avg, max)
+- Server-side Actuator HTTP timer metrics (`app.api.requests` / `http.server.requests`) and MongoDB command metrics (`app.db.operations` / `mongodb.driver.commands`)
+- Node.js generator process resource utilization (RSS, CPU)
+- Detailed per-request CSV output and multi-sheet Excel summary workbooks
+
+To configure and run the load tests, refer to the [Load Testing Documentation](load-tests/README.md).
+
 ## Browser UI
 
 The browser UI is available under the `/kitchensink` context path. OAuth sign-in uses Auth0, then maps the identity email to an active local account and its database roles. Members, Users, and Roles navigation and controls are rendered dynamically when the corresponding permission is present; changes made to user permissions or roles are dynamically resolved on every page refresh or `/api/v1/me` call, syncing button states (such as Add, Edit, and Delete) without requiring re-authentication.
