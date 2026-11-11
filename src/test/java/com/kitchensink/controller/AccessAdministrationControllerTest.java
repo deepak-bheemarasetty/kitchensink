@@ -12,7 +12,9 @@ import com.kitchensink.controller.AccessAdministrationController.RoleAssignment;
 import com.kitchensink.controller.AccessAdministrationController.RoleRequest;
 import com.kitchensink.controller.AccessAdministrationController.UserStatus;
 import com.kitchensink.service.IdentityResolver;
+import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 import org.bson.Document;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,6 +34,7 @@ class AccessAdministrationControllerTest {
 
   private MongoTemplate mongoTemplate;
   private IdentityResolver identityResolver;
+  private com.kitchensink.service.RolePermissionService rolePermissionService;
   private AccessAdministrationController controller;
   private TestingAuthenticationToken adminAuth;
 
@@ -39,7 +42,13 @@ class AccessAdministrationControllerTest {
   void setUp() {
     mongoTemplate = mock(MongoTemplate.class);
     identityResolver = mock(IdentityResolver.class);
-    controller = new AccessAdministrationController(mongoTemplate, identityResolver);
+    rolePermissionService = mock(com.kitchensink.service.RolePermissionService.class);
+    when(rolePermissionService.user(any()))
+        .thenReturn(
+            new com.kitchensink.service.RolePermissionService.UserPermissions(
+                true, Set.of("role:manage", "user:manage")));
+    controller =
+        new AccessAdministrationController(mongoTemplate, identityResolver, rolePermissionService);
 
     adminAuth =
         new TestingAuthenticationToken(
@@ -88,6 +97,10 @@ class AccessAdministrationControllerTest {
         new RoleRequest("custom", "new desc", List.of("member:view", "member:create"));
     Document updated = controller.updateRole("custom", req, adminAuth);
     assertThat(updated.getString("description")).isEqualTo("new desc");
+
+    roleDoc.put("isSystem", true);
+    assertThatThrownBy(() -> controller.updateRole("custom", req, adminAuth))
+        .isInstanceOf(ResponseStatusException.class);
   }
 
   @Test
@@ -152,8 +165,15 @@ class AccessAdministrationControllerTest {
   @Test
   void permissionGuardChecks() {
     TestingAuthenticationToken noPerms = new TestingAuthenticationToken("user", "pwd", List.of());
+    when(identityResolver.resolveIdentity(noPerms)).thenReturn("user");
+    when(rolePermissionService.user("user"))
+        .thenReturn(
+            new com.kitchensink.service.RolePermissionService.UserPermissions(
+                false, Collections.emptySet()));
     assertThatThrownBy(
-            () -> controller.createRole(new RoleRequest("r", "d", List.of("member:view")), noPerms))
+            () ->
+                controller.createRole(
+                    new RoleRequest("valid-role", "desc", List.of("member:view")), noPerms))
         .isInstanceOf(AccessDeniedException.class);
   }
 }

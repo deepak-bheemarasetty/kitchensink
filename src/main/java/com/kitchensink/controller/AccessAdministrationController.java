@@ -38,11 +38,22 @@ import org.springframework.web.server.ResponseStatusException;
 public class AccessAdministrationController {
   private final MongoTemplate mongoTemplate;
   private final IdentityResolver identityResolver;
+  private final com.kitchensink.service.RolePermissionService rolePermissionService;
 
+  /**
+   * Constructs an access administration controller.
+   *
+   * @param mongoTemplate Mongo operations template
+   * @param identityResolver authenticated actor identity resolver
+   * @param rolePermissionService role and permissions resolution service
+   */
   public AccessAdministrationController(
-      MongoTemplate mongoTemplate, IdentityResolver identityResolver) {
+      MongoTemplate mongoTemplate,
+      IdentityResolver identityResolver,
+      com.kitchensink.service.RolePermissionService rolePermissionService) {
     this.mongoTemplate = mongoTemplate;
     this.identityResolver = identityResolver;
+    this.rolePermissionService = rolePermissionService;
   }
 
   @GetMapping("/roles")
@@ -108,6 +119,9 @@ public class AccessAdministrationController {
     Document current = mongoTemplate.findOne(query, Document.class, "roles");
     if (current == null) {
       throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Role not found");
+    }
+    if (current.getBoolean("isSystem", false)) {
+      throw new ResponseStatusException(HttpStatus.CONFLICT, "System roles cannot be modified");
     }
     Date now = Date.from(Instant.now());
     List<String> sortedPermissions = validatedRole.getPermissions().stream().sorted().toList();
@@ -379,8 +393,13 @@ public class AccessAdministrationController {
   }
 
   private void require(Authentication actor, String permission) {
-    if (actor == null
-        || actor.getAuthorities().stream().noneMatch(a -> permission.equals(a.getAuthority()))) {
+    if (actor == null || !actor.isAuthenticated()) {
+      throw new AccessDeniedException("Authentication required");
+    }
+    String userIdentity = identity(actor);
+    com.kitchensink.service.RolePermissionService.UserPermissions user =
+        rolePermissionService.user(userIdentity);
+    if (!user.active() || !user.permissions().contains(permission)) {
       throw new AccessDeniedException("You do not have permission");
     }
   }

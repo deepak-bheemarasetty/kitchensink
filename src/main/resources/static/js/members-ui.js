@@ -298,7 +298,19 @@
     submit.disabled = true; submit.textContent = 'Saving…';
     try {
       const requestHeaders = headers(true);
-      if (!id) requestHeaders['Idempotency-Key'] = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      if (!id) {
+        const cryptoApi = window.crypto;
+        if (cryptoApi && typeof cryptoApi.randomUUID === 'function') {
+          requestHeaders['Idempotency-Key'] = cryptoApi.randomUUID();
+        } else if (cryptoApi && typeof cryptoApi.getRandomValues === 'function') {
+          const bytes = new Uint8Array(16);
+          cryptoApi.getRandomValues(bytes);
+          const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+          requestHeaders['Idempotency-Key'] = `${Date.now()}-${hex}`;
+        } else {
+          throw new Error('Secure random number generation is unavailable in this browser.');
+        }
+      }
       const response = await fetch(id ? `${apiBase}/members/${encodeURIComponent(id)}` : `${apiBase}/members`, {
         method:id ? 'PATCH' : 'POST', headers:requestHeaders, body:JSON.stringify(payload)
       });

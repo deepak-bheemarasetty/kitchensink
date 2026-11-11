@@ -8,6 +8,8 @@ import java.io.IOException;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import org.slf4j.MDC;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -17,6 +19,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * @author Deepak Bheemarasetty
  */
 @Component
+@Order(Ordered.HIGHEST_PRECEDENCE)
 public class RequestIdFilter extends OncePerRequestFilter {
   private static final Pattern SAFE_ID = Pattern.compile("[A-Za-z0-9._-]{1,128}");
 

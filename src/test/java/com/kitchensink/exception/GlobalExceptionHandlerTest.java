@@ -104,4 +104,39 @@ class GlobalExceptionHandlerTest {
     ResponseEntity<Map<String, Object>> res = handler.handleGenericException(ex);
     assertThat(res.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
   }
+
+  @Test
+  void handleSpringClientExceptions() {
+    var notReadable =
+        new org.springframework.http.converter.HttpMessageNotReadableException(
+            "bad json", mock(org.springframework.http.HttpInputMessage.class));
+    assertThat(handler.handleMessageNotReadable(notReadable).getStatusCode())
+        .isEqualTo(HttpStatus.BAD_REQUEST);
+
+    var missingHeader =
+        new org.springframework.web.bind.MissingRequestHeaderException(
+            "Idempotency-Key", mock(org.springframework.core.MethodParameter.class));
+    assertThat(handler.handleMissingHeader(missingHeader).getStatusCode())
+        .isEqualTo(HttpStatus.BAD_REQUEST);
+
+    var mismatch =
+        new org.springframework.web.method.annotation.MethodArgumentTypeMismatchException(
+            "abc",
+            org.bson.types.ObjectId.class,
+            "id",
+            mock(org.springframework.core.MethodParameter.class),
+            null);
+    assertThat(handler.handleTypeMismatch(mismatch).getStatusCode())
+        .isEqualTo(HttpStatus.BAD_REQUEST);
+
+    var methodNotSupported =
+        new org.springframework.web.HttpRequestMethodNotSupportedException("POST");
+    assertThat(handler.handleMethodNotSupported(methodNotSupported).getStatusCode())
+        .isEqualTo(HttpStatus.METHOD_NOT_ALLOWED);
+
+    var mediaNotSupported =
+        new org.springframework.web.HttpMediaTypeNotSupportedException("text/plain");
+    assertThat(handler.handleMediaTypeNotSupported(mediaNotSupported).getStatusCode())
+        .isEqualTo(HttpStatus.UNSUPPORTED_MEDIA_TYPE);
+  }
 }
