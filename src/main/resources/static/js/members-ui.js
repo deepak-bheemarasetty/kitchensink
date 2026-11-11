@@ -14,8 +14,9 @@
   const form = document.getElementById('member-form');
   const confirmDialog = document.getElementById('confirm-dialog');
   const notice = document.getElementById('notice');
-  const canUpdate = document.body.dataset.canUpdate === 'true';
-  const canDelete = document.body.dataset.canDelete === 'true';
+  let canUpdate = document.body.dataset.canUpdate === 'true';
+  let canDelete = document.body.dataset.canDelete === 'true';
+  let canCreate = !!document.getElementById('add-member');
   let cursor = null;
   let loading = false;
   let hasMore = false;
@@ -23,6 +24,35 @@
   let searchTimer;
   let pendingDelete;
   let deletedMemberId;
+
+  async function refreshPermissions() {
+    try {
+      const response = await fetch(`${apiBase}/me`, { headers: headers() });
+      if (response.ok) {
+        const data = await response.json();
+        const perms = Array.isArray(data.permissions) ? data.permissions : [];
+        const newCanUpdate = perms.includes('member:update');
+        const newCanDelete = perms.includes('member:delete');
+        const newCanCreate = perms.includes('member:create');
+        if (newCanUpdate !== canUpdate || newCanDelete !== canDelete || newCanCreate !== canCreate) {
+          canUpdate = newCanUpdate;
+          canDelete = newCanDelete;
+          canCreate = newCanCreate;
+          document.body.dataset.canUpdate = String(canUpdate);
+          document.body.dataset.canDelete = String(canDelete);
+          const addMemberBtn = document.getElementById('add-member');
+          if (addMemberBtn) {
+            addMemberBtn.style.display = canCreate ? '' : 'none';
+          }
+          const actionHeader = document.querySelector('.data-table th:last-child');
+          if (actionHeader) {
+            actionHeader.style.display = (canUpdate || canDelete) ? '' : 'none';
+          }
+          load(true);
+        }
+      }
+    } catch (_) {}
+  }
 
   // Cross-tab synchronization via BroadcastChannel with localStorage fallback
   const syncChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('kitchensink_sync') : null;
@@ -34,6 +64,8 @@
     syncChannel.onmessage = event => {
       if (event?.data?.type === 'MEMBERS_UPDATED') {
         load(true);
+      } else if (event?.data?.type === 'USERS_UPDATED' || event?.data?.type === 'ROLES_UPDATED') {
+        refreshPermissions();
       }
     };
   }
@@ -43,6 +75,8 @@
         const data = JSON.parse(event.newValue);
         if (data.type === 'MEMBERS_UPDATED') {
           load(true);
+        } else if (data.type === 'USERS_UPDATED' || data.type === 'ROLES_UPDATED') {
+          refreshPermissions();
         }
       } catch (_) {}
     }
@@ -372,5 +406,6 @@
   const query = new URLSearchParams(location.search);
   search.value = query.get('q') || '';
   status.value = query.get('status') || '';
+  refreshPermissions();
   load(true);
 })();

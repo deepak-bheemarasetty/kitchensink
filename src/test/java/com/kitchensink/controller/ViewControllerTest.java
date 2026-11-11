@@ -1,9 +1,14 @@
 package com.kitchensink.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import com.kitchensink.service.IdentityResolver;
+import com.kitchensink.service.RolePermissionService;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.security.authentication.TestingAuthenticationToken;
@@ -27,7 +32,14 @@ class ViewControllerTest {
   @Test
   void memberViewControllerHomeAndMembers() {
     MongoTemplate mongoTemplate = mock(MongoTemplate.class);
-    MemberViewController controller = new MemberViewController(mongoTemplate);
+    IdentityResolver identityResolver = mock(IdentityResolver.class);
+    RolePermissionService rolePermissionService = mock(RolePermissionService.class);
+    when(identityResolver.resolveIdentity(any())).thenReturn("admin");
+    when(rolePermissionService.user("admin"))
+        .thenReturn(new RolePermissionService.UserPermissions(true, Set.of("member:view")));
+
+    MemberViewController controller =
+        new MemberViewController(mongoTemplate, identityResolver, rolePermissionService);
     Model model = new ConcurrentModel();
 
     Authentication auth =
