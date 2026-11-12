@@ -171,6 +171,43 @@ class CustomMetricsTest {
   }
 
   @Test
+  void apiMetricsFilterHandlesNonmatchingContextPathAndSuccessfulBoundaryStatus()
+      throws ServletException, IOException {
+    CustomApiMetricsFilter filter = new CustomApiMetricsFilter(registry, "kitchensink");
+    MockHttpServletRequest request =
+        new MockHttpServletRequest("GET", "/api/v1/members");
+    request.setContextPath("/prefix");
+    MockHttpServletResponse response = new MockHttpServletResponse();
+    filter.doFilter(
+        request,
+        response,
+        (req, res) -> ((jakarta.servlet.http.HttpServletResponse) res).setStatus(399));
+    assertThat(
+            registry
+                .find("app.api.requests")
+                .tag("uri", "/api/v1/members")
+                .tag("outcome", "success")
+                .timer())
+        .isNotNull();
+  }
+
+  @Test
+  void metricEndpointRoundingMapsNonFiniteValuesToZero() throws Exception {
+    ApiMetricsEndpoint apiEndpoint = new ApiMetricsEndpoint(registry);
+    var apiRound = ApiMetricsEndpoint.class.getDeclaredMethod("round3", double.class);
+    apiRound.setAccessible(true);
+    assertThat((double) apiRound.invoke(apiEndpoint, Double.NaN)).isZero();
+    assertThat((double) apiRound.invoke(apiEndpoint, Double.POSITIVE_INFINITY)).isZero();
+    assertThat((double) apiRound.invoke(apiEndpoint, 1.2345)).isEqualTo(1.235);
+
+    DbMetricsEndpoint dbEndpoint = new DbMetricsEndpoint(registry);
+    var dbRound = DbMetricsEndpoint.class.getDeclaredMethod("round3", double.class);
+    dbRound.setAccessible(true);
+    assertThat((double) dbRound.invoke(dbEndpoint, Double.NEGATIVE_INFINITY)).isZero();
+    assertThat((double) dbRound.invoke(dbEndpoint, 1.2345)).isEqualTo(1.235);
+  }
+
+  @Test
   void dbMetricsCommandListenerHandlesUntrackedEventsAndNonStringCollections() {
     final CustomDbMetricsConfiguration.CustomDbMetricsCommandListener listener =
         new CustomDbMetricsConfiguration.CustomDbMetricsCommandListener(registry, "kitchensink");
@@ -292,6 +329,40 @@ class CustomMetricsTest {
   }
 
   @Test
+  void apiMetricsEndpointHandlesLegacyAndMissingTags() {
+    assertThat(new ApiMetricsEndpoint(new SimpleMeterRegistry()).getApiMetrics()).isEmpty();
+    registry
+        .timer("app.api.requests", "api", "GET /legacy", "status", "404")
+        .record(25, TimeUnit.MILLISECONDS);
+    registry
+        .timer("app.api.requests", "api", "legacy", "status", "invalid")
+        .record(10, TimeUnit.MILLISECONDS);
+    registry.timer("app.api.requests").record(0, TimeUnit.NANOSECONDS);
+
+    var summaries = new ApiMetricsEndpoint(registry).getApiMetrics();
+    assertThat(summaries).hasSize(3);
+
+    var legacy =
+        summaries.stream().filter(s -> "/legacy".equals(s.uri())).findFirst().orElseThrow();
+    assertThat(legacy.method()).isEqualTo("GET");
+    assertThat(legacy.outcome()).isEqualTo("failed");
+    assertThat(legacy.p50Seconds()).isEqualTo(legacy.avgSeconds());
+    assertThat(legacy.p95Seconds()).isEqualTo(legacy.maxSeconds());
+    assertThat(legacy.p99Seconds()).isEqualTo(legacy.maxSeconds());
+
+    var malformed =
+        summaries.stream().filter(s -> "legacy".equals(s.uri())).findFirst().orElseThrow();
+    assertThat(malformed.method()).isEqualTo("UNKNOWN");
+    assertThat(malformed.outcome()).isEqualTo("unknown");
+
+    var missing =
+        summaries.stream().filter(s -> "UNKNOWN".equals(s.uri())).findFirst().orElseThrow();
+    assertThat(missing.method()).isEqualTo("UNKNOWN");
+    assertThat(missing.status()).isEqualTo("UNKNOWN");
+    assertThat(missing.count()).isEqualTo(1);
+  }
+
+  @Test
   void dbMetricsEndpointFormatsMetricsWithPrecisionAndPercentiles() {
     final CustomDbMetricsConfiguration.CustomDbMetricsCommandListener listener =
         new CustomDbMetricsConfiguration.CustomDbMetricsCommandListener(registry, "kitchensink");
@@ -352,5 +423,28 @@ class CustomMetricsTest {
     assertThat(usersInsert).isNotNull();
     assertThat(usersInsert.count()).isEqualTo(1);
     assertThat(usersInsert.status()).isEqualTo("FAILED");
+  }
+
+  @Test
+  void dbMetricsEndpointHandlesMissingTagsAndPercentileFallbacks() {
+    registry
+        .timer("app.db.operations", "model", "users", "method", "insert", "status", "FAILED")
+        .record(25, TimeUnit.MILLISECONDS);
+    registry.timer("app.db.operations").record(0, TimeUnit.NANOSECONDS);
+
+    var summaries = new DbMetricsEndpoint(registry).getDbMetrics();
+    assertThat(summaries).hasSize(2);
+    var users = summaries.stream().filter(s -> "users".equals(s.model())).findFirst().orElseThrow();
+    assertThat(users.p50Seconds()).isEqualTo(users.avgSeconds());
+    assertThat(users.p95Seconds()).isEqualTo(users.maxSeconds());
+    assertThat(users.p99Seconds()).isEqualTo(users.maxSeconds());
+    assertThat(users.minSeconds()).isEqualTo(users.avgSeconds());
+
+    var missing =
+        summaries.stream().filter(s -> "UNKNOWN".equals(s.model())).findFirst().orElseThrow();
+    assertThat(missing.method()).isEqualTo("UNKNOWN");
+    assertThat(missing.status()).isEqualTo("UNKNOWN");
+    assertThat(missing.count()).isEqualTo(1);
+    assertThat(new DbMetricsEndpoint(new SimpleMeterRegistry()).getDbMetrics()).isEmpty();
   }
 }

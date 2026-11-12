@@ -81,6 +81,48 @@ class IdentityAndPermissionServiceTest {
   }
 
   @Test
+  void identityResolverRejectsMissingAuthenticationAndFallsBackFromBlankEmails() {
+    assertThatThrownBy(() -> identityResolver.resolveIdentity(null))
+        .isInstanceOf(AccessDeniedException.class);
+
+    Authentication unauthenticated = mock(Authentication.class);
+    when(unauthenticated.isAuthenticated()).thenReturn(false);
+    assertThatThrownBy(() -> identityResolver.resolveIdentity(unauthenticated))
+        .isInstanceOf(AccessDeniedException.class);
+
+    Authentication unnamed = mock(Authentication.class);
+    when(unnamed.isAuthenticated()).thenReturn(true);
+    when(unnamed.getName()).thenReturn(null);
+    assertThatThrownBy(() -> identityResolver.resolveIdentity(unnamed))
+        .isInstanceOf(AccessDeniedException.class);
+
+    OAuth2User principal = mock(OAuth2User.class);
+    when(principal.getName()).thenReturn(" Fallback@Example.com ");
+    when(principal.getAttribute("email")).thenReturn("  ");
+    OAuth2AuthenticationToken oauth =
+        new OAuth2AuthenticationToken(principal, List.of(() -> "ROLE_USER"), "auth0");
+    assertThat(identityResolver.resolveIdentity(oauth)).isEqualTo("fallback@example.com");
+
+    Jwt jwt = mock(Jwt.class);
+    when(jwt.getClaimAsString("email")).thenReturn(" ");
+    when(jwt.getSubject()).thenReturn(" JWT-Subject ");
+    JwtAuthenticationToken jwtAuthentication =
+        new JwtAuthenticationToken(jwt, List.of(() -> "SCOPE_read"));
+    assertThat(identityResolver.resolveIdentity(jwtAuthentication)).isEqualTo("jwt-subject");
+  }
+
+  @Test
+  void identityResolverResolvesUserDocumentByNormalizedIdentity() {
+    Authentication auth = mock(Authentication.class);
+    when(auth.isAuthenticated()).thenReturn(true);
+    when(auth.getName()).thenReturn(" USER@example.com ");
+    Document user = new Document("_id", new ObjectId());
+    when(mongoTemplate.findOne(any(Query.class), eq(Document.class), eq("users"))).thenReturn(user);
+
+    assertThat(identityResolver.resolveUser(auth)).isSameAs(user);
+  }
+
+  @Test
   void identityResolverRequireActorId() {
     Authentication auth = mock(Authentication.class);
     when(auth.isAuthenticated()).thenReturn(true);
@@ -144,5 +186,26 @@ class IdentityAndPermissionServiceTest {
     var userPerms = rolePermissionService.user("active@example.com");
     assertThat(userPerms.active()).isTrue();
     assertThat(userPerms.permissions()).contains("member:view");
+  }
+
+  @Test
+  void rolePermissionServiceRejectsInvalidAccountAndRole() {
+    UserAccount invalidUser = new UserAccount();
+    invalidUser.setUsername("invalid@example.com");
+    invalidUser.setUsernameLower("invalid@example.com");
+    invalidUser.setRoles(List.of("viewer"));
+    invalidUser.setActive(true);
+    when(mongoTemplate.findOne(any(Query.class), eq(UserAccount.class))).thenReturn(invalidUser);
+
+    assertThat(rolePermissionService.user("invalid@example.com").active()).isFalse();
+
+    Role invalidRole = new Role();
+    invalidRole.setName("viewer");
+    invalidRole.setDescription("viewer");
+    invalidRole.setPermissions(List.of("unsupported"));
+    invalidRole.setUpdatedAt(java.time.Instant.now());
+    when(mongoTemplate.find(any(Query.class), eq(Role.class))).thenReturn(List.of(invalidRole));
+    assertThatThrownBy(() -> rolePermissionService.permissionsFor(List.of("viewer")))
+        .isInstanceOf(com.kitchensink.validation.ValidationException.class);
   }
 }

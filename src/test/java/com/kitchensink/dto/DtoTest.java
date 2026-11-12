@@ -17,6 +17,7 @@ class DtoTest {
 
   @Test
   void memberRequestValidationAndAccessors() {
+    assertThat(MemberRequest.empty().getFirstName()).isNull();
     MemberRequest request =
         MemberRequest.of("Jane", "Doe", "jane.doe@example.com", "1", "2125551212");
     request.setFirstName("Jane");
@@ -48,6 +49,7 @@ class DtoTest {
     patch.setPhone("2079460192");
     patch.setStatus("inactive");
     patch.setVersion(2);
+    patch.setMemberId(null);
 
     assertThat(patch.getFirstName()).isEqualTo("Alice");
     assertThat(patch.getLastName()).isEqualTo("Smith");
@@ -56,6 +58,7 @@ class DtoTest {
     assertThat(patch.getPhone()).isEqualTo("2079460192");
     assertThat(patch.getStatus()).isEqualTo("inactive");
     assertThat(patch.getVersion()).isEqualTo(2);
+    assertThat(patch.getMemberId()).isNull();
 
     patch.validate();
 
@@ -65,6 +68,7 @@ class DtoTest {
 
   @Test
   void memberResponseFormatting() {
+    assertThat(MemberResponse.from(null)).isNull();
     Member member = Member.create();
     member.setId(new ObjectId());
     member.setMemberId("M-999");
@@ -98,5 +102,16 @@ class DtoTest {
     member.setLastName(null);
     MemberResponse respNoLast = MemberResponse.from(member);
     assertThat(respNoLast.getName()).isEqualTo("Bob");
+
+    Member emptyMember = Member.create();
+    MemberResponse responseWithoutNamesOrPhone = MemberResponse.from(emptyMember);
+    assertThat(responseWithoutNamesOrPhone.getName()).isEmpty();
+    assertThat(responseWithoutNamesOrPhone.getFirstName()).isNull();
+    assertThat(responseWithoutNamesOrPhone.getLastName()).isNull();
+    assertThat(responseWithoutNamesOrPhone.getPhone()).isEmpty();
+
+    emptyMember.setFirstName("Alice");
+    emptyMember.setPhone(" ");
+    assertThat(MemberResponse.from(emptyMember).getPhone()).isEmpty();
   }
 }

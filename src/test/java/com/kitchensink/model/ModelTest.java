@@ -53,6 +53,7 @@ class ModelTest {
     assertThat(member.getVersion()).isEqualTo(1);
     assertThat(member.getDeletedAt()).isNull();
     assertThat(member.getDeletedBy()).isNull();
+    assertThat(member.getFullName()).isEqualTo("John Doe");
 
     Instant delDate = Instant.now();
     member.setDeletedAt(delDate);
@@ -61,6 +62,10 @@ class ModelTest {
     assertThat(member.getDeletedBy()).isEqualTo(actorId);
 
     member.validate();
+    member.setLastName(null);
+    assertThat(member.getFullName()).isEqualTo("John");
+    member.setEmail(null);
+    assertThat(member.getEmailLower()).isNull();
   }
 
   @Test
@@ -108,8 +113,9 @@ class ModelTest {
     assertThat(account.getCreatedAt()).isEqualTo(now);
     assertThat(account.getUpdatedAt()).isEqualTo(now);
     assertThat(account.getLastLoginAt()).isEqualTo(now);
-
     account.validate();
+    account.setRoles(null);
+    assertThat(account.getRoles()).isNull();
   }
 
   @Test

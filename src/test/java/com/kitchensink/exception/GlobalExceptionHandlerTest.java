@@ -9,8 +9,11 @@ import com.kitchensink.validation.ValidationException;
 import com.mongodb.MongoBulkWriteException;
 import com.mongodb.MongoWriteException;
 import com.mongodb.WriteError;
+import com.mongodb.bulk.BulkWriteError;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.slf4j.MDC;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -32,6 +35,10 @@ class GlobalExceptionHandlerTest {
     ResponseEntity<Map<String, Object>> res = handler.handleRequestStatus(ex);
     assertThat(res.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     assertThat(res.getBody()).isNotNull();
+
+    ResponseEntity<Map<String, Object>> withoutReason =
+        handler.handleRequestStatus(new ResponseStatusException(HttpStatus.BAD_REQUEST));
+    assertThat(withoutReason.getBody()).isNotNull();
   }
 
   @Test
@@ -50,6 +57,29 @@ class GlobalExceptionHandlerTest {
     IllegalArgumentException nullMsg = new IllegalArgumentException((String) null);
     assertThat(handler.handleValidation(nullMsg).getStatusCode())
         .isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+  }
+
+  @Test
+  void validationResponsesUseRequestIdFromMdc() {
+    MDC.put("requestId", "trace-id");
+    try {
+      Map<?, ?> requestError =
+          (Map<?, ?>)
+              handler
+                  .handleValidation(new IllegalArgumentException("invalid"))
+                  .getBody()
+                  .get("error");
+      assertThat(requestError.get("requestId")).isEqualTo("trace-id");
+      Map<?, ?> fieldError =
+          (Map<?, ?>)
+              handler
+                  .handleFieldValidation(new ValidationException("name", "invalid"))
+                  .getBody()
+                  .get("error");
+      assertThat(fieldError.get("requestId")).isEqualTo("trace-id");
+    } finally {
+      MDC.remove("requestId");
+    }
   }
 
   @Test
@@ -91,6 +121,28 @@ class GlobalExceptionHandlerTest {
   }
 
   @Test
+  void handleNestedMongoAndBulkSchemaFailures() {
+    MongoWriteException duplicateWrite = mock(MongoWriteException.class);
+    WriteError duplicateError = mock(WriteError.class);
+    when(duplicateWrite.getError()).thenReturn(duplicateError);
+    when(duplicateError.getCode()).thenReturn(11000);
+    DataIntegrityViolationException nested =
+        new DataIntegrityViolationException(
+            "duplicate", new RuntimeException("wrapped", duplicateWrite));
+    assertThat(handler.handleDataIntegrityViolation(nested).getStatusCode())
+        .isEqualTo(HttpStatus.CONFLICT);
+
+    MongoBulkWriteException bulkException = mock(MongoBulkWriteException.class);
+    BulkWriteError schemaError = mock(BulkWriteError.class);
+    when(schemaError.getCode()).thenReturn(121);
+    when(bulkException.getWriteErrors()).thenReturn(java.util.List.of(schemaError));
+    DataIntegrityViolationException bulk =
+        new DataIntegrityViolationException("bulk schema failure", bulkException);
+    assertThat(handler.handleDataIntegrityViolation(bulk).getStatusCode())
+        .isEqualTo(HttpStatus.CONFLICT);
+  }
+
+  @Test
   void handleDataIntegrityViolationExceptionOther() {
     DataIntegrityViolationException ex =
         new DataIntegrityViolationException("conflict", new RuntimeException());
@@ -103,6 +155,17 @@ class GlobalExceptionHandlerTest {
     Exception ex = new Exception("unexpected");
     ResponseEntity<Map<String, Object>> res = handler.handleGenericException(ex);
     assertThat(res.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+  }
+
+  @Test
+  void handleGenericExceptionAddsSafeRequestDetail() {
+    HttpServletRequest request = mock(HttpServletRequest.class);
+    handler.handleGenericException(new IllegalStateException("private detail"), request);
+    org.mockito.Mockito.verify(request).setAttribute("EXECUTION_ERROR_DETAIL", "private detail");
+
+    handler.handleGenericException(new IllegalStateException("  "), request);
+    org.mockito.Mockito.verify(request)
+        .setAttribute("EXECUTION_ERROR_DETAIL", "IllegalStateException");
   }
 
   @Test

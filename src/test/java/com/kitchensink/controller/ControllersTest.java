@@ -87,6 +87,10 @@ class ControllersTest {
     when(memberService.findById(id)).thenReturn(null);
     assertThatThrownBy(() -> memberController.findById(id))
         .isInstanceOf(ResponseStatusException.class);
+
+    when(memberService.findByMemberId("M-100")).thenReturn(null);
+    assertThatThrownBy(() -> memberController.findByMemberId("M-100"))
+        .isInstanceOf(ResponseStatusException.class);
   }
 
   @Test
@@ -128,5 +132,22 @@ class ControllersTest {
     var resp = currentUserController.currentUser(auth);
     assertThat(resp.username()).isEqualTo("user@example.com");
     assertThat(resp.permissions()).containsExactly("member:view", "user:manage");
+  }
+
+  @Test
+  void currentUserControllerReturnsNoPermissionsForInactiveUserAndFiltersOtherPermissions() {
+    TestingAuthenticationToken auth = new TestingAuthenticationToken("user", "pwd");
+    when(identityResolver.resolveIdentity(auth)).thenReturn("inactive@example.com");
+    when(rolePermissionService.user("inactive@example.com"))
+        .thenReturn(new RolePermissionService.UserPermissions(false, Set.of("member:view")));
+    assertThat(currentUserController.currentUser(auth).permissions()).isEmpty();
+
+    when(identityResolver.resolveIdentity(auth)).thenReturn("active@example.com");
+    when(rolePermissionService.user("active@example.com"))
+        .thenReturn(
+            new RolePermissionService.UserPermissions(
+                true, Set.of("profile:view", "user:read", "team:manage")));
+    assertThat(currentUserController.currentUser(auth).permissions())
+        .containsExactly("team:manage");
   }
 }

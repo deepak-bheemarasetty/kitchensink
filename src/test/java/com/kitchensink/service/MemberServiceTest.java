@@ -5,11 +5,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.kitchensink.dto.MemberPatchRequest;
 import com.kitchensink.model.Member;
 import com.kitchensink.repository.MemberRepository;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -18,6 +21,7 @@ import org.bson.types.ObjectId;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.MDC;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Query;
@@ -115,6 +119,49 @@ class MemberServiceTest {
   }
 
   @Test
+  void registerRemovesReservedKeyOnDuplicateAndHandlesOptionalName() {
+    Member member = Member.create();
+    member.setFirstName("John");
+    member.setEmail("john.doe@example.com");
+    member.setPhone("2125551212");
+    when(mongoTemplate.insert(any(Member.class))).thenThrow(new DuplicateKeyException("duplicate"));
+
+    assertThatThrownBy(() -> memberService.register(member, "reserved-key"))
+        .isInstanceOf(DuplicateEmailException.class);
+    assertThat(member.getLastName()).isEmpty();
+    verify(mongoTemplate).remove(any(Query.class), eq("idempotency_keys"));
+  }
+
+  @Test
+  void registerUsesRequestMdcAndOmitsInvalidClientIp() {
+    Member member = Member.create();
+    member.setFirstName("John");
+    member.setEmail("john@example.com");
+    member.setPhone("2125551212");
+    when(mongoTemplate.insert(any(Member.class)))
+        .thenAnswer(
+            invocation -> {
+              Member inserted = invocation.getArgument(0);
+              inserted.setId(new ObjectId());
+              return inserted;
+            });
+    org.mockito.ArgumentCaptor<com.kitchensink.model.AuditLog> auditCaptor =
+        org.mockito.ArgumentCaptor.forClass(com.kitchensink.model.AuditLog.class);
+    try {
+      MDC.put("requestId", "request-from-mdc");
+      MDC.put("clientIp", "203.0.113.1");
+      memberService.register(member);
+    } finally {
+      MDC.remove("requestId");
+      MDC.remove("clientIp");
+    }
+
+    verify(mongoTemplate).insert(auditCaptor.capture());
+    assertThat(auditCaptor.getValue().getRequestId()).isEqualTo("request-from-mdc");
+    assertThat(auditCaptor.getValue().getIp()).isEqualTo("203.0.113.1");
+  }
+
+  @Test
   void registerIdempotentReplay() {
     Member member = Member.create();
     member.setFirstName("John");
@@ -181,6 +228,25 @@ class MemberServiceTest {
   }
 
   @Test
+  void findByEmailDistinguishesMissingAndDeletedMembers() {
+    when(memberRepository.findByEmailLowerAndDeletedAtIsNull("missing@example.com"))
+        .thenReturn(Optional.empty());
+    assertThatThrownBy(() -> memberService.findByEmail("missing@example.com"))
+        .isInstanceOf(ResponseStatusException.class)
+        .hasMessageContaining("Member not found");
+
+    Member deleted = Member.create();
+    deleted.setEmail("deleted@example.com");
+    deleted.setStatus("active");
+    deleted.setDeletedAt(java.time.Instant.now());
+    when(memberRepository.findByEmailLowerAndDeletedAtIsNull("deleted@example.com"))
+        .thenReturn(Optional.of(deleted));
+    assertThatThrownBy(() -> memberService.findByEmail("deleted@example.com"))
+        .isInstanceOf(ResponseStatusException.class)
+        .hasMessageContaining("Member is no longer active");
+  }
+
+  @Test
   void updateMember() {
     ObjectId id = new ObjectId();
     Member current = Member.create();
@@ -204,6 +270,94 @@ class MemberServiceTest {
   }
 
   @Test
+  void updateMapsMissingAndStaleRecordsToNotFoundAndConflict() {
+    ObjectId id = new ObjectId();
+    MemberPatchRequest patch = new MemberPatchRequest();
+    patch.setVersion(1);
+    when(mongoTemplate.findOne(any(Query.class), eq(Member.class))).thenReturn(null);
+    when(mongoTemplate.findById(id, Member.class)).thenReturn(null);
+    assertThatThrownBy(() -> memberService.update(id, patch))
+        .isInstanceOf(ResponseStatusException.class)
+        .hasMessageContaining("Member not found");
+
+    Member latest = Member.create();
+    latest.setId(id);
+    when(mongoTemplate.findById(id, Member.class)).thenReturn(latest);
+    assertThatThrownBy(() -> memberService.update(id, patch))
+        .isInstanceOf(ResponseStatusException.class)
+        .hasMessageContaining("Member was changed");
+
+    Member deleted = Member.create();
+    deleted.setId(id);
+    deleted.setDeletedAt(java.time.Instant.now());
+    when(mongoTemplate.findById(id, Member.class)).thenReturn(deleted);
+    assertThatThrownBy(() -> memberService.update(id, patch))
+        .isInstanceOf(ResponseStatusException.class)
+        .hasMessageContaining("Member not found");
+  }
+
+  @Test
+  void updateHandlesDuplicateEmailAndLostRace() {
+    ObjectId id = new ObjectId();
+    Member existing = Member.create();
+    existing.setId(id);
+    existing.setFirstName("John");
+    existing.setLastName("Doe");
+    existing.setEmail("john@example.com");
+    existing.setPhone("2125551212");
+    existing.setCountryCode("1");
+    existing.setStatus("active");
+    existing.setVersion(1);
+
+    MemberPatchRequest patch = new MemberPatchRequest();
+    patch.setVersion(1);
+    patch.setEmail("new@example.com");
+    patch.setPhone("2125551213");
+    patch.setCountryCode("44");
+    patch.setStatus("inactive");
+    when(mongoTemplate.findOne(any(Query.class), eq(Member.class))).thenReturn(existing);
+    when(mongoTemplate.findAndModify(any(), any(), any(), eq(Member.class)))
+        .thenThrow(new DuplicateKeyException("duplicate"));
+    assertThatThrownBy(() -> memberService.update(id, patch))
+        .isInstanceOf(ResponseStatusException.class)
+        .hasMessageContaining("A member with this email already exists");
+
+    when(mongoTemplate.findAndModify(any(), any(), any(), eq(Member.class))).thenReturn(null);
+    when(mongoTemplate.findById(id, Member.class)).thenReturn(existing);
+    MemberPatchRequest lostRace = new MemberPatchRequest();
+    lostRace.setVersion(1);
+    assertThatThrownBy(() -> memberService.update(id, lostRace))
+        .isInstanceOf(ResponseStatusException.class)
+        .hasMessageContaining("Member was changed");
+  }
+
+  @Test
+  void updateNormalizesOptionalFieldsAndAuditsSuccess() {
+    ObjectId id = new ObjectId();
+    Member existing = Member.create();
+    existing.setId(id);
+    existing.setFirstName("John");
+    existing.setLastName("Doe");
+    existing.setEmail("john@example.com");
+    existing.setPhone("2125551212");
+    existing.setCountryCode("1");
+    existing.setStatus("active");
+    existing.setVersion(1);
+    when(mongoTemplate.findOne(any(Query.class), eq(Member.class))).thenReturn(existing);
+    when(mongoTemplate.findAndModify(any(), any(), any(), eq(Member.class))).thenReturn(existing);
+
+    MemberPatchRequest patch = new MemberPatchRequest();
+    patch.setVersion(1);
+    patch.setLastName("  ");
+    patch.setEmail(" New@example.com ");
+    patch.setPhone("1 (212) 555-1213");
+    patch.setCountryCode("44");
+    patch.setStatus("inactive");
+
+    assertThat(memberService.update(id, patch)).isSameAs(existing);
+  }
+
+  @Test
   void softDeleteAndRestore() {
     ObjectId id = new ObjectId();
     Member member = Member.create();
@@ -213,6 +367,27 @@ class MemberServiceTest {
 
     memberService.softDelete(id);
     assertThat(memberService.restore(id)).isEqualTo(member);
+  }
+
+  @Test
+  void softDeleteAndRestoreReportMissingRecords() {
+    ObjectId id = new ObjectId();
+    when(mongoTemplate.findAndModify(any(), any(), any(), eq(Member.class))).thenReturn(null);
+    assertThatThrownBy(() -> memberService.softDelete(id))
+        .isInstanceOf(ResponseStatusException.class)
+        .hasMessageContaining("Member not found");
+    assertThatThrownBy(() -> memberService.restore(id))
+        .isInstanceOf(ResponseStatusException.class)
+        .hasMessageContaining("Deleted member not found");
+  }
+
+  @Test
+  void restoreMapsDuplicateKeyToConflict() {
+    when(mongoTemplate.findAndModify(any(), any(), any(), eq(Member.class)))
+        .thenThrow(new DuplicateKeyException("duplicate"));
+    assertThatThrownBy(() -> memberService.restore(new ObjectId()))
+        .isInstanceOf(ResponseStatusException.class)
+        .hasMessageContaining("A member with this email or member ID already exists");
   }
 
   @Test
@@ -230,6 +405,48 @@ class MemberServiceTest {
   }
 
   @Test
+  void searchBuildsNextCursorAndRejectsMalformedCursor() {
+    ObjectId firstId = new ObjectId();
+    Member first = Member.create();
+    first.setId(firstId);
+    first.setFullNameLower("alice");
+    first.setEmailLower("alice@example.com");
+    Member second = Member.create();
+    second.setId(new ObjectId());
+    second.setFullNameLower("bob");
+    second.setEmailLower("bob@example.com");
+    when(mongoTemplate.find(any(Query.class), eq(Member.class))).thenReturn(List.of(first, second));
+
+    var page = memberService.search(null, null, "email", 1, null);
+    assertThat(page.data()).containsExactly(first);
+    assertThat(page.hasMore()).isTrue();
+    assertThat(new String(Base64.getUrlDecoder().decode(page.nextCursor()), StandardCharsets.UTF_8))
+        .isEqualTo("alice@example.com|" + firstId);
+
+    String validCursor =
+        Base64.getUrlEncoder()
+            .withoutPadding()
+            .encodeToString(("alice|" + firstId).getBytes(StandardCharsets.UTF_8));
+    assertThat(memberService.search(" ", " ", "name", 10, validCursor).hasMore()).isFalse();
+    assertThatThrownBy(() -> memberService.search(null, null, "name", 10, "bad"))
+        .isInstanceOf(com.kitchensink.validation.ValidationException.class);
+    assertThatThrownBy(() -> memberService.search(null, null, "name", 10, "%%%"))
+        .isInstanceOf(com.kitchensink.validation.ValidationException.class);
+    String invalidObjectId =
+        Base64.getUrlEncoder()
+            .withoutPadding()
+            .encodeToString("alice|not-an-object-id".getBytes(StandardCharsets.UTF_8));
+    assertThatThrownBy(() -> memberService.search(null, null, "name", 10, invalidObjectId))
+        .isInstanceOf(com.kitchensink.validation.ValidationException.class);
+    String wrongParts =
+        Base64.getUrlEncoder()
+            .withoutPadding()
+            .encodeToString("one-part".getBytes(StandardCharsets.UTF_8));
+    assertThatThrownBy(() -> memberService.search(null, null, "name", 10, wrongParts))
+        .isInstanceOf(com.kitchensink.validation.ValidationException.class);
+  }
+
+  @Test
   void permissionDeniedWithoutAuthority() {
     TestingAuthenticationToken token = new TestingAuthenticationToken("viewer", "pwd", List.of());
     SecurityContextHolder.getContext().setAuthentication(token);
@@ -241,5 +458,23 @@ class MemberServiceTest {
     Member member = Member.create();
     assertThatThrownBy(() -> memberService.register(member))
         .isInstanceOf(AccessDeniedException.class);
+  }
+
+  @Test
+  void unauthenticatedAndMissingPermissionRequestsAreDenied() {
+    Member member = Member.create();
+    SecurityContextHolder.clearContext();
+    assertThatThrownBy(() -> memberService.register(member))
+        .isInstanceOf(AccessDeniedException.class)
+        .hasMessageContaining("Authentication required");
+
+    TestingAuthenticationToken auth = new TestingAuthenticationToken("viewer", "pwd", List.of());
+    SecurityContextHolder.getContext().setAuthentication(auth);
+    when(identityResolver.resolveIdentity(auth)).thenReturn("viewer");
+    when(rolePermissionService.user("viewer"))
+        .thenReturn(new RolePermissionService.UserPermissions(true, Set.of("member:view")));
+    assertThatThrownBy(() -> memberService.register(member))
+        .isInstanceOf(AccessDeniedException.class)
+        .hasMessageContaining("You do not have permission");
   }
 }

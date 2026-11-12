@@ -17,9 +17,11 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.MDC;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -59,6 +61,17 @@ class ExecutionTrackingFilterTest {
   }
 
   @Test
+  void contextPathIsIgnoredWhenItDoesNotPrefixRequestUri() throws ServletException, IOException {
+    MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/members");
+    request.setContextPath("/other");
+    MockHttpServletResponse response = new MockHttpServletResponse();
+    FilterChain chain = mock(FilterChain.class);
+    filter.doFilter(request, response, chain);
+    verify(chain).doFilter(request, response);
+    verify(executionService, never()).recordReceived(any(), any(), any(), any());
+  }
+
+  @Test
   void unauthenticatedRequestIsIgnored() throws ServletException, IOException {
     MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/members");
     MockHttpServletResponse response = new MockHttpServletResponse();
@@ -83,6 +96,49 @@ class ExecutionTrackingFilterTest {
 
     verify(chain).doFilter(request, response);
     verify(executionService, never()).recordReceived(any(), any(), any(), any());
+  }
+
+  @Test
+  void authenticatedAnonymousPrincipalIsIgnored() throws ServletException, IOException {
+    MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/members");
+    MockHttpServletResponse response = new MockHttpServletResponse();
+    FilterChain chain = mock(FilterChain.class);
+    SecurityContextHolder.getContext()
+        .setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(
+                "anonymousUser", null, java.util.List.of()));
+
+    filter.doFilter(request, response, chain);
+
+    verify(chain).doFilter(request, response);
+    verify(executionService, never()).recordReceived(any(), any(), any(), any());
+  }
+
+  @Test
+  void emptyApiPathIsNormalizedAndNullExecutionIsNotCompleted()
+      throws ServletException, IOException {
+    MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api");
+    request.setContextPath("/api");
+    Authentication auth =
+        UsernamePasswordAuthenticationToken.authenticated("user@example.com", "pass", List.of());
+    SecurityContextHolder.getContext().setAuthentication(auth);
+
+    MockHttpServletResponse response = new MockHttpServletResponse();
+    filter.doFilter(request, response, (req, res) -> ((HttpServletResponse) res).setStatus(204));
+
+    assertThat(response.getStatus()).isEqualTo(204);
+    verify(executionService, never()).recordReceived(any(), any(), any(), any());
+    verify(executionService, never()).recordCompletion(any(), any(), any());
+
+    when(identityResolver.resolveIdentity(auth)).thenReturn("user@example.com");
+    when(executionService.recordReceived("user@example.com", "user.me", "GET", null))
+        .thenReturn(null);
+    filter.doFilter(
+        new MockHttpServletRequest("GET", "/api/v1/me"),
+        new MockHttpServletResponse(),
+        (req, res) -> {});
+    verify(executionService).recordReceived("user@example.com", "user.me", "GET", null);
+    verify(executionService, never()).recordCompletion(any(), any(), any());
   }
 
   @Test
@@ -130,6 +186,28 @@ class ExecutionTrackingFilterTest {
 
     verify(executionService).recordCompletion(execId, "SUCCESS", null);
     assertThat(response.getContentAsString()).isEqualTo("{\"id\":\"123\"}");
+  }
+
+  @Test
+  void requestIdFromMdcTakesPrecedenceOverHeader() throws ServletException, IOException {
+    Authentication auth =
+        UsernamePasswordAuthenticationToken.authenticated("user@example.com", "pass", List.of());
+    SecurityContextHolder.getContext().setAuthentication(auth);
+    when(identityResolver.resolveIdentity(auth)).thenReturn("user@example.com");
+    Execution execution = new Execution();
+    execution.setId(new ObjectId());
+    when(executionService.recordReceived("user@example.com", "user.me", "GET", "mdc-id"))
+        .thenReturn(execution);
+    MDC.put("requestId", "mdc-id");
+    try {
+      MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/me");
+      request.addHeader("X-Request-ID", "header-id");
+      filter.doFilter(request, new MockHttpServletResponse(), (req, res) -> {});
+    } finally {
+      MDC.remove("requestId");
+    }
+    verify(executionService)
+        .recordReceived("user@example.com", "user.me", "GET", "mdc-id");
   }
 
   @Test
@@ -246,6 +324,63 @@ class ExecutionTrackingFilterTest {
     filter.doFilter(request, response, chain);
 
     verify(executionService).recordCompletion(execId, "FAILED", "HTTP 502 error");
+  }
+
+  @Test
+  void authenticatedFailedRequestHandlesMalformedAndUnrecognizedJsonErrors()
+      throws ServletException, IOException {
+    Authentication auth =
+        UsernamePasswordAuthenticationToken.authenticated(
+            "user@example.com", "pass", List.of());
+    SecurityContextHolder.getContext().setAuthentication(auth);
+    when(identityResolver.resolveIdentity(auth)).thenReturn("user@example.com");
+
+    String[] bodies = {"{broken}", "{\"error\":\"bad\"}", "{\"error\":{}}"};
+    String[] expected = {"HTTP 400 error", bodies[1], bodies[2]};
+    for (int i = 0; i < bodies.length; i++) {
+      ObjectId execId = new ObjectId();
+      Execution execution = new Execution();
+      execution.setId(execId);
+      when(executionService.recordReceived(eq("user@example.com"), eq("user.me"), eq("GET"), any()))
+          .thenReturn(execution);
+      MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/me");
+      MockHttpServletResponse response = new MockHttpServletResponse();
+      String body = bodies[i];
+      filter.doFilter(
+          request,
+          response,
+          (req, res) -> {
+            res.getOutputStream().write(body.getBytes(StandardCharsets.UTF_8));
+            ((HttpServletResponse) res).setStatus(400);
+          });
+      verify(executionService).recordCompletion(execId, "FAILED", expected[i]);
+    }
+  }
+
+  @Test
+  void executionErrorDetailOverridesResponseBody() throws ServletException, IOException {
+    Authentication auth =
+        UsernamePasswordAuthenticationToken.authenticated(
+            "user@example.com", "pass", java.util.List.of());
+    SecurityContextHolder.getContext().setAuthentication(auth);
+    when(identityResolver.resolveIdentity(auth)).thenReturn("user@example.com");
+    ObjectId execId = new ObjectId();
+    Execution execution = new Execution();
+    execution.setId(execId);
+    when(executionService.recordReceived(eq("user@example.com"), any(), eq("GET"), any()))
+        .thenReturn(execution);
+
+    MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/me");
+    MockHttpServletResponse response = new MockHttpServletResponse();
+    filter.doFilter(
+        request,
+        response,
+        (req, res) -> {
+          req.setAttribute("EXECUTION_ERROR_DETAIL", "sanitized internal detail");
+          ((HttpServletResponse) res).setStatus(400);
+        });
+
+    verify(executionService).recordCompletion(execId, "FAILED", "sanitized internal detail");
   }
 
   @Test

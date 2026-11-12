@@ -95,8 +95,7 @@ public final class Validator {
     if (normalized.length() > 60) {
       throw new ValidationException(field, label + " must be at most 60 characters");
     }
-    if (!NAME.matcher(normalized).matches()
-        || normalized.codePoints().noneMatch(Character::isLetter)) {
+    if (!NAME.matcher(normalized).matches()) {
       throw new ValidationException(
           field,
           label + " contains Invalid Characters, Please Enter a Valid " + label.replace(" ", ""));
@@ -186,7 +185,7 @@ public final class Validator {
     String normalized = Normalizer.normalize(value.trim(), Normalizer.Form.NFC);
     rejectControls(normalized, "notes");
     if (normalized.length() > 1000) {
-      fail("notes", "must be at most 1000 characters");
+      throw fail("notes", "must be at most 1000 characters");
     }
     return normalized.isEmpty() ? null : normalized;
   }
@@ -202,7 +201,7 @@ public final class Validator {
         || value.length() < 3
         || value.length() > 20
         || !value.matches("[A-Za-z0-9-]+")) {
-      fail("memberId", "must contain 3 to 20 letters, digits, or hyphens");
+      throw fail("memberId", "must contain 3 to 20 letters, digits, or hyphens");
     }
     return value.trim().toUpperCase(Locale.ROOT);
   }
@@ -215,7 +214,7 @@ public final class Validator {
    */
   public static String status(String value) {
     if (!"active".equals(value) && !"inactive".equals(value)) {
-      fail("status", "must be active or inactive");
+      throw fail("status", "must be active or inactive");
     }
     return value;
   }
@@ -230,7 +229,7 @@ public final class Validator {
     String normalized = normalizeRequired(value, "username", 254);
     if (!EMAIL.matcher(normalized).matches()
         || normalized.substring(0, normalized.indexOf('@')).length() > 64) {
-      fail("username", "must be a valid email address");
+      throw fail("username", "must be a valid email address");
     }
     return normalized;
   }
@@ -243,11 +242,11 @@ public final class Validator {
    */
   public static String roleName(String value) {
     if (value == null) {
-      fail("name", "is required");
+      throw fail("name", "is required");
     }
     String normalized = value.trim().toLowerCase(Locale.ROOT);
     if (!ROLE.matcher(normalized).matches()) {
-      fail("name", "must be 2 to 30 lowercase letters, digits, spaces, or hyphens");
+      throw fail("name", "must be 2 to 30 lowercase letters, digits, spaces, or hyphens");
     }
     return normalized;
   }
@@ -258,7 +257,7 @@ public final class Validator {
    * @param field property name
    */
   public static void unknownField(String field) {
-    fail(field, "is not allowed");
+    throw fail(field, "is not allowed");
   }
 
   /**
@@ -269,12 +268,12 @@ public final class Validator {
    */
   public static String roleDescription(String value) {
     if (value == null) {
-      fail("description", "is required");
+      throw fail("description", "is required");
     }
     String normalized = Normalizer.normalize(value.trim(), Normalizer.Form.NFC);
     rejectControls(normalized, "description");
     if (normalized.length() > 200) {
-      fail("description", "must be at most 200 characters");
+      throw fail("description", "must be at most 200 characters");
     }
     return normalized;
   }
@@ -290,11 +289,11 @@ public final class Validator {
         || values.isEmpty()
         || values.size() > 10
         || new HashSet<>(values).size() != values.size()) {
-      fail("roles", "must contain 1 to 10 unique role names");
+      throw fail("roles", "must contain 1 to 10 unique role names");
     }
     for (String value : values) {
       if (value == null || !ROLE.matcher(value).matches()) {
-        fail("roles", "contains an invalid role name");
+        throw fail("roles", "contains an invalid role name");
       }
     }
     return List.copyOf(values);
@@ -308,7 +307,7 @@ public final class Validator {
    */
   public static int version(Integer value) {
     if (value == null || value < 1) {
-      fail("version", "is required and must be positive");
+      throw fail("version", "is required and must be positive");
     }
     return value;
   }
@@ -321,7 +320,7 @@ public final class Validator {
    */
   public static String sortField(String value) {
     if (!"name".equals(value) && !"email".equals(value)) {
-      fail("sort", "must be name or email");
+      throw fail("sort", "must be name or email");
     }
     return value;
   }
@@ -334,7 +333,7 @@ public final class Validator {
    */
   public static String searchQuery(String value) {
     if (value != null && value.length() > 100) {
-      fail("q", "must be at most 100 characters");
+      throw fail("q", "must be at most 100 characters");
     }
     if (value != null) {
       rejectControls(value, "q");
@@ -350,7 +349,7 @@ public final class Validator {
    */
   public static int pageLimit(int value) {
     if (value < 1 || value > 100) {
-      fail("limit", "must be between 1 and 100");
+      throw fail("limit", "must be between 1 and 100");
     }
     return value;
   }
@@ -363,7 +362,7 @@ public final class Validator {
    */
   public static String cursor(String value) {
     if (value != null && value.length() > 256) {
-      fail("cursor", "is too long");
+      throw fail("cursor", "is too long");
     }
     return value;
   }
@@ -376,7 +375,7 @@ public final class Validator {
    */
   public static String idempotencyKey(String value) {
     if (value == null || value.isBlank() || value.length() > 128) {
-      fail("Idempotency-Key", "must contain 1 to 128 characters");
+      throw fail("Idempotency-Key", "must contain 1 to 128 characters");
     }
     rejectControls(value, "Idempotency-Key");
     return value;
@@ -389,7 +388,7 @@ public final class Validator {
    */
   public static void rejectMemberIdChange(String memberId) {
     if (memberId != null) {
-      fail("memberId", "cannot be changed");
+      throw fail("memberId", "cannot be changed");
     }
   }
 
@@ -400,17 +399,17 @@ public final class Validator {
    */
   public static void userAccount(UserAccount user) {
     if (user == null) {
-      fail("user", "is required");
+      throw fail("user", "is required");
     }
     if (!username(user.getUsername()).equals(user.getUsername())) {
-      fail("username", "must be normalized");
+      throw fail("username", "must be normalized");
     }
     if (!user.getUsername().toLowerCase(Locale.ROOT).equals(user.getUsernameLower())) {
-      fail("usernameLower", "must match normalized username");
+      throw fail("usernameLower", "must match normalized username");
     }
     roles(user.getRoles());
     if (user.getCreatedAt() == null || user.getUpdatedAt() == null) {
-      fail("timestamps", "createdAt and updatedAt are required");
+      throw fail("timestamps", "createdAt and updatedAt are required");
     }
   }
 
@@ -421,7 +420,7 @@ public final class Validator {
    */
   public static void role(Role role) {
     if (role == null) {
-      fail("role", "is required");
+      throw fail("role", "is required");
     }
     roleName(role.getName());
     roleDescription(role.getDescription());
@@ -429,17 +428,17 @@ public final class Validator {
         || role.getPermissions().isEmpty()
         || new HashSet<>(role.getPermissions()).size() != role.getPermissions().size()
         || !PERMISSIONS.containsAll(role.getPermissions())) {
-      fail("permissions", "must contain unique supported permissions");
+      throw fail("permissions", "must contain unique supported permissions");
     }
     if (role.getPermissions().stream()
             .anyMatch(
                 permission ->
                     Set.of("member:create", "member:update", "member:delete").contains(permission))
         && !role.getPermissions().contains("member:view")) {
-      fail("permissions", "member write permissions require member:view");
+      throw fail("permissions", "member write permissions require member:view");
     }
     if (role.getUpdatedAt() == null) {
-      fail("updatedAt", "is required");
+      throw fail("updatedAt", "is required");
     }
   }
 
@@ -450,29 +449,29 @@ public final class Validator {
    */
   public static void auditLog(AuditLog audit) {
     if (audit == null) {
-      fail("audit", "is required");
+      throw fail("audit", "is required");
     }
     if (audit.getId() != null) {
-      fail("_id", "must be generated by MongoDB");
+      throw fail("_id", "must be generated by MongoDB");
     }
     if (audit.getAt() == null || audit.getActorId() == null || audit.getEntityId() == null) {
-      fail("audit", "timestamp, actor, and entity are required");
+      throw fail("audit", "timestamp, actor, and entity are required");
     }
     if (!AUDIT_ACTIONS.contains(audit.getAction())) {
-      fail("action", "is not supported");
+      throw fail("action", "is not supported");
     }
     if (audit.getEntityType() == null
         || audit.getEntityType().isBlank()
         || audit.getEntityType().length() > 40) {
-      fail("entityType", "is invalid");
+      throw fail("entityType", "is invalid");
     }
     if (audit.getRequestId() == null
         || audit.getRequestId().isBlank()
         || audit.getRequestId().length() > 128) {
-      fail("requestId", "is invalid");
+      throw fail("requestId", "is invalid");
     }
     if (audit.getChanges() == null) {
-      fail("changes", "is required");
+      throw fail("changes", "is required");
     }
     if (audit.getChanges().keySet().stream()
         .anyMatch(
@@ -481,10 +480,10 @@ public final class Validator {
                     || key.toLowerCase(Locale.ROOT).contains("password")
                     || key.startsWith("$")
                     || key.contains("."))) {
-      fail("changes", "cannot contain secrets, null names, or MongoDB operator keys");
+      throw fail("changes", "cannot contain secrets, null names, or MongoDB operator keys");
     }
     if (audit.getIp() != null && audit.getIp().length() > 64) {
-      fail("ip", "is too long");
+      throw fail("ip", "is too long");
     }
   }
 
@@ -495,7 +494,7 @@ public final class Validator {
    */
   public static void member(Member member) {
     if (member == null) {
-      fail("member", "is required");
+      throw fail("member", "is required");
     }
     firstName(member.getFirstName());
     lastName(member.getLastName());
@@ -505,38 +504,38 @@ public final class Validator {
     memberId(member.getMemberId());
     status(member.getStatus());
     if (member.getVersion() == null || member.getVersion() < 1) {
-      fail("version", "must be positive");
+      throw fail("version", "must be positive");
     }
     if (member.getCreatedAt() == null
         || member.getUpdatedAt() == null
         || member.getCreatedBy() == null
         || member.getUpdatedBy() == null) {
-      fail("audit", "member timestamps and actors are required");
+      throw fail("audit", "member timestamps and actors are required");
     }
   }
 
   private static String normalizeRequired(String value, String field, int maxLength) {
     if (value == null) {
-      fail(field, "is required");
+      throw fail(field, "is required");
     }
     String normalized = Normalizer.normalize(value.trim(), Normalizer.Form.NFC);
     rejectControls(normalized, field);
     if (normalized.isEmpty()) {
-      fail(field, "is required");
+      throw fail(field, "is required");
     }
     if (normalized.length() > maxLength) {
-      fail(field, "is too long");
+      throw fail(field, "is too long");
     }
     return normalized;
   }
 
   private static void rejectControls(String value, String field) {
     if (value.codePoints().anyMatch(Character::isISOControl)) {
-      fail(field, "contains control characters");
+      throw fail(field, "contains control characters");
     }
   }
 
-  private static void fail(String field, String reason) {
-    throw new ValidationException(field, field + " " + reason);
+  private static ValidationException fail(String field, String reason) {
+    return new ValidationException(field, field + " " + reason);
   }
 }

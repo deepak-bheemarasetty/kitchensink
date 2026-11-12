@@ -3,7 +3,11 @@ package com.kitchensink.validation;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Consumer;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
 
@@ -54,6 +58,7 @@ class ValidatorTest {
     assertThatThrownBy(() -> Validator.email("bad-email"))
         .isInstanceOf(ValidationException.class)
         .hasMessage("Email Address isn't valid");
+    assertThatThrownBy(() -> Validator.email("  ")).isInstanceOf(ValidationException.class);
     assertThatThrownBy(() -> Validator.email("a".repeat(250) + "@b.com"))
         .isInstanceOf(ValidationException.class)
         .hasMessage("Email Address isn't valid");
@@ -66,6 +71,9 @@ class ValidatorTest {
         .isInstanceOf(ValidationException.class)
         .hasMessage("Phone Number is required");
     assertThatThrownBy(() -> Validator.phone("0123456"))
+        .isInstanceOf(ValidationException.class)
+        .hasMessage("Phone Number Cannot start with a 0");
+    assertThatThrownBy(() -> Validator.phone("(0)123456"))
         .isInstanceOf(ValidationException.class)
         .hasMessage("Phone Number Cannot start with a 0");
     assertThatThrownBy(() -> Validator.phone("123"))
@@ -88,6 +96,9 @@ class ValidatorTest {
     assertThat(Validator.countryCode("91")).isEqualTo("91");
     assertThat(Validator.countryCode("850")).isEqualTo("850");
     assertThatThrownBy(() -> Validator.countryCode("01"))
+        .isInstanceOf(ValidationException.class)
+        .hasMessage("Country Code Cannot start with a 0");
+    assertThatThrownBy(() -> Validator.countryCode("0"))
         .isInstanceOf(ValidationException.class)
         .hasMessage("Country Code Cannot start with a 0");
     assertThatThrownBy(() -> Validator.countryCode("12345"))
@@ -218,6 +229,192 @@ class ValidatorTest {
   }
 
   @Test
+  void optionalNoteAndUnknownFieldValidation() {
+    assertThat(Validator.optionalNote(null)).isNull();
+    assertThat(Validator.optionalNote("   ")).isNull();
+    assertThat(Validator.optionalNote(" note ")).isEqualTo("note");
+    assertThatThrownBy(() -> Validator.optionalNote("bad\u0000note"))
+        .isInstanceOf(ValidationException.class);
+    assertThatThrownBy(() -> Validator.optionalNote("a".repeat(1001)))
+        .isInstanceOf(ValidationException.class);
+    assertThatThrownBy(() -> Validator.unknownField("unexpected"))
+        .isInstanceOf(ValidationException.class)
+        .hasMessage("unexpected is not allowed");
+    assertThatThrownBy(() -> Validator.rejectMemberIdChange("M-123"))
+        .isInstanceOf(ValidationException.class);
+    Validator.rejectMemberIdChange(null);
+  }
+
+  @Test
+  void normalizationAndScalarValidationBoundaries() {
+    assertThat(Validator.name("  Ana   María  ", "firstName", true)).isEqualTo("Ana María");
+    assertThat(Validator.name("  ", "lastName", false)).isNull();
+    assertThatThrownBy(() -> Validator.name("a\0b", "firstName", true))
+        .isInstanceOf(ValidationException.class);
+    assertThatThrownBy(() -> Validator.name("a".repeat(61), "custom", true))
+        .isInstanceOf(ValidationException.class)
+        .hasMessage("custom must be at most 60 characters");
+    assertThatThrownBy(() -> Validator.name("123", "custom", true))
+        .isInstanceOf(ValidationException.class);
+    assertThatThrownBy(() -> Validator.email("a".repeat(65) + "@example.com"))
+        .isInstanceOf(ValidationException.class);
+    assertThatThrownBy(() -> Validator.email("a@")).isInstanceOf(ValidationException.class);
+    assertThatThrownBy(() -> Validator.email("bad\0@example.com"))
+        .isInstanceOf(ValidationException.class);
+    assertThatThrownBy(() -> Validator.phone("   ")).isInstanceOf(ValidationException.class);
+    assertThat(Validator.phone(" 1 (212) 555-1212 ")).isEqualTo("12125551212");
+    assertThatThrownBy(() -> Validator.phone(" 0123456 ")).isInstanceOf(ValidationException.class);
+    assertThat(Validator.username("  USER@example.com  ")).isEqualTo("USER@example.com");
+    assertThatThrownBy(() -> Validator.username("a".repeat(65) + "@example.com"))
+        .isInstanceOf(ValidationException.class);
+    assertThatThrownBy(() -> Validator.username("   ")).isInstanceOf(ValidationException.class);
+    assertThatThrownBy(() -> Validator.username("a".repeat(255)))
+        .isInstanceOf(ValidationException.class);
+    assertThat(Validator.roleName("  VIEWER  ")).isEqualTo("viewer");
+    assertThat(Validator.roleDescription(" description ")).isEqualTo("description");
+    assertThatThrownBy(() -> Validator.roleDescription("bad\0description"))
+        .isInstanceOf(ValidationException.class);
+    assertThatThrownBy(() -> Validator.roles(Arrays.asList("viewer", null)))
+        .isInstanceOf(ValidationException.class);
+    assertThatThrownBy(() -> Validator.roles(List.of("invalid!")))
+        .isInstanceOf(ValidationException.class);
+    assertThat(Validator.roles(List.of("aa", "bb", "cc", "dd", "ee", "ff", "gg", "hh", "ii", "jj")))
+        .hasSize(10);
+    assertThatThrownBy(() -> Validator.cursor("a".repeat(257)))
+        .isInstanceOf(ValidationException.class);
+    assertThat(Validator.idempotencyKey("x")).isEqualTo("x");
+    assertThatThrownBy(() -> Validator.idempotencyKey("bad\0key"))
+        .isInstanceOf(ValidationException.class);
+    assertThat(Validator.searchQuery("a".repeat(100))).hasSize(100);
+    assertThatThrownBy(() -> Validator.searchQuery("bad\0query"))
+        .isInstanceOf(ValidationException.class);
+    assertThat(Validator.pageLimit(100)).isEqualTo(100);
+    assertThatThrownBy(() -> Validator.pageLimit(101)).isInstanceOf(ValidationException.class);
+  }
+
+  @Test
+  void entityValidationRejectsInvalidEntities() {
+    assertThatThrownBy(() -> Validator.member(null)).isInstanceOf(ValidationException.class);
+    assertThatThrownBy(() -> Validator.role(null)).isInstanceOf(ValidationException.class);
+    assertThatThrownBy(() -> Validator.userAccount(null)).isInstanceOf(ValidationException.class);
+    assertThatThrownBy(() -> Validator.auditLog(null)).isInstanceOf(ValidationException.class);
+
+    com.kitchensink.model.Member invalidVersion = MemberForValidation.valid();
+    invalidVersion.setVersion(0);
+    assertThatThrownBy(() -> Validator.member(invalidVersion))
+        .isInstanceOf(ValidationException.class);
+    assertThatThrownBy(() -> Validator.memberId("AB")).isInstanceOf(ValidationException.class);
+    com.kitchensink.model.Member missingActor = MemberForValidation.valid();
+    missingActor.setCreatedBy(null);
+    assertThatThrownBy(() -> Validator.member(missingActor))
+        .isInstanceOf(ValidationException.class);
+
+    com.kitchensink.model.UserAccount user = new com.kitchensink.model.UserAccount();
+    user.setUsername(" USER@example.com ");
+    user.setUsernameLower("user@example.com");
+    user.setRoles(List.of("viewer"));
+    user.setCreatedAt(java.time.Instant.now());
+    user.setUpdatedAt(java.time.Instant.now());
+    assertThatThrownBy(() -> Validator.userAccount(user)).isInstanceOf(ValidationException.class);
+    user.setUsername("user@example.com");
+    user.setUsernameLower("wrong@example.com");
+    assertThatThrownBy(() -> Validator.userAccount(user)).isInstanceOf(ValidationException.class);
+    user.setUsernameLower("user@example.com");
+    user.setRoles(List.of("viewer", "viewer"));
+    assertThatThrownBy(() -> Validator.userAccount(user)).isInstanceOf(ValidationException.class);
+    user.setRoles(List.of("viewer"));
+    user.setUpdatedAt(null);
+    assertThatThrownBy(() -> Validator.userAccount(user)).isInstanceOf(ValidationException.class);
+    user.setUpdatedAt(java.time.Instant.now());
+    user.setCreatedAt(null);
+    assertThatThrownBy(() -> Validator.userAccount(user)).isInstanceOf(ValidationException.class);
+
+    com.kitchensink.model.Role role = new com.kitchensink.model.Role();
+    role.setName("viewer");
+    role.setDescription("viewer");
+    role.setPermissions(List.of("member:create"));
+    role.setUpdatedAt(java.time.Instant.now());
+    assertThatThrownBy(() -> Validator.role(role)).isInstanceOf(ValidationException.class);
+    role.setPermissions(List.of("unsupported"));
+    assertThatThrownBy(() -> Validator.role(role)).isInstanceOf(ValidationException.class);
+    role.setPermissions(null);
+    assertThatThrownBy(() -> Validator.role(role)).isInstanceOf(ValidationException.class);
+    role.setPermissions(List.of("member:view", "member:view"));
+    assertThatThrownBy(() -> Validator.role(role)).isInstanceOf(ValidationException.class);
+    role.setPermissions(List.of());
+    assertThatThrownBy(() -> Validator.role(role)).isInstanceOf(ValidationException.class);
+    role.setPermissions(List.of("member:update"));
+    assertThatThrownBy(() -> Validator.role(role)).isInstanceOf(ValidationException.class);
+    role.setPermissions(List.of("member:view", "member:update"));
+    Validator.role(role);
+    role.setPermissions(List.of("member:view"));
+    role.setUpdatedAt(null);
+    assertThatThrownBy(() -> Validator.role(role)).isInstanceOf(ValidationException.class);
+
+    com.kitchensink.model.AuditLog audit = new com.kitchensink.model.AuditLog();
+    audit.setAt(java.time.Instant.now());
+    audit.setActorId(new ObjectId());
+    audit.setAction("member.create");
+    audit.setEntityType("member");
+    audit.setEntityId(new ObjectId());
+    audit.setChanges(Map.of("safe", "value"));
+    audit.setRequestId("request");
+    audit.setIp("127.0.0.1");
+    Validator.auditLog(audit);
+    audit.setChanges(Map.of("password", "secret"));
+    assertThatThrownBy(() -> Validator.auditLog(audit)).isInstanceOf(ValidationException.class);
+
+    assertInvalidAudit(log -> log.setId(new ObjectId()));
+    assertInvalidAudit(log -> log.setActorId(null));
+    assertInvalidAudit(log -> log.setEntityId(null));
+    assertInvalidAudit(log -> log.setAction("unknown"));
+    assertInvalidAudit(log -> log.setAt(null));
+    assertInvalidAudit(log -> log.setEntityType(" "));
+    assertInvalidAudit(log -> log.setEntityType(null));
+    assertInvalidAudit(log -> log.setEntityType("x".repeat(41)));
+    assertInvalidAudit(log -> log.setRequestId(null));
+    assertInvalidAudit(log -> log.setRequestId(" "));
+    assertInvalidAudit(log -> log.setRequestId("x".repeat(129)));
+    assertInvalidAudit(log -> log.setChanges(null));
+    assertInvalidAudit(
+        log -> {
+          Map<String, Object> changes = new HashMap<>();
+          changes.put("$set", "value");
+          log.setChanges(changes);
+        });
+    assertInvalidAudit(
+        log -> {
+          Map<String, Object> changes = new HashMap<>();
+          changes.put("nested.key", "value");
+          log.setChanges(changes);
+        });
+    assertInvalidAudit(
+        log -> {
+          Map<String, Object> changes = new HashMap<>();
+          changes.put(null, "value");
+          log.setChanges(changes);
+        });
+    assertInvalidAudit(log -> log.setIp("x".repeat(65)));
+
+    com.kitchensink.model.Member missingTimestamps = MemberForValidation.valid();
+    missingTimestamps.setUpdatedAt(null);
+    assertThatThrownBy(() -> Validator.member(missingTimestamps))
+        .isInstanceOf(ValidationException.class);
+    com.kitchensink.model.Member missingCreatedAt = MemberForValidation.valid();
+    missingCreatedAt.setCreatedAt(null);
+    assertThatThrownBy(() -> Validator.member(missingCreatedAt))
+        .isInstanceOf(ValidationException.class);
+    com.kitchensink.model.Member missingUpdatedBy = MemberForValidation.valid();
+    missingUpdatedBy.setUpdatedBy(null);
+    assertThatThrownBy(() -> Validator.member(missingUpdatedBy))
+        .isInstanceOf(ValidationException.class);
+    com.kitchensink.model.Member missingVersion = MemberForValidation.valid();
+    missingVersion.setVersion(null);
+    assertThatThrownBy(() -> Validator.member(missingVersion))
+        .isInstanceOf(ValidationException.class);
+  }
+
+  @Test
   void entityValidationMethods() {
     com.kitchensink.model.Member member = com.kitchensink.model.Member.create();
     member.setMemberId("M-1234567890ABCDEF");
@@ -258,5 +455,37 @@ class ValidatorTest {
     log.setChanges(java.util.Map.of("k", "v"));
     log.setRequestId("req-1");
     Validator.auditLog(log);
+  }
+
+  private static final class MemberForValidation {
+    private static com.kitchensink.model.Member valid() {
+      com.kitchensink.model.Member member = com.kitchensink.model.Member.create();
+      member.setMemberId("M-1234567890ABCDEF");
+      member.setFirstName("John");
+      member.setLastName("Doe");
+      member.setEmail("john.doe@example.com");
+      member.setPhone("2125551212");
+      member.setCountryCode("1");
+      member.setStatus("active");
+      member.setVersion(1);
+      member.setCreatedAt(java.time.Instant.now());
+      member.setUpdatedAt(java.time.Instant.now());
+      member.setCreatedBy(new ObjectId());
+      member.setUpdatedBy(new ObjectId());
+      return member;
+    }
+  }
+
+  private static void assertInvalidAudit(Consumer<com.kitchensink.model.AuditLog> invalidation) {
+    com.kitchensink.model.AuditLog audit = new com.kitchensink.model.AuditLog();
+    audit.setAt(java.time.Instant.now());
+    audit.setActorId(new ObjectId());
+    audit.setAction("member.create");
+    audit.setEntityType("member");
+    audit.setEntityId(new ObjectId());
+    audit.setChanges(Map.of("safe", "value"));
+    audit.setRequestId("request");
+    invalidation.accept(audit);
+    assertThatThrownBy(() -> Validator.auditLog(audit)).isInstanceOf(ValidationException.class);
   }
 }
