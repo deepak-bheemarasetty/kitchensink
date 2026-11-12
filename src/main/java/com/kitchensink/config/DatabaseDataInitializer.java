@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Locale;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.core.annotation.Order;
@@ -15,8 +16,8 @@ import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Component;
 
 /**
- * Automatically initializes standard application roles and default admin user accounts in MongoDB
- * on application startup if they are not already present.
+ * Automatically initializes standard application roles and configured administrator user accounts
+ * in MongoDB on application startup if they are not already present.
  *
  * @author Deepak Bheemarasetty
  */
@@ -26,9 +27,13 @@ public class DatabaseDataInitializer implements ApplicationRunner {
   private static final Logger LOGGER = LoggerFactory.getLogger(DatabaseDataInitializer.class);
 
   private final MongoTemplate mongoTemplate;
+  private final List<String> adminEmails;
 
-  public DatabaseDataInitializer(MongoTemplate mongoTemplate) {
+  public DatabaseDataInitializer(
+      MongoTemplate mongoTemplate,
+      @Value("${app.security.admin-emails:}") List<String> adminEmails) {
     this.mongoTemplate = mongoTemplate;
+    this.adminEmails = adminEmails == null ? List.of() : adminEmails;
   }
 
   @Override
@@ -80,11 +85,18 @@ public class DatabaseDataInitializer implements ApplicationRunner {
   }
 
   private void seedAdminUsers() {
-    List<String> adminEmails =
-        List.of("kitchensink.admin@mail.com", "kitchensink.dbadmin@mail.com");
+    if (adminEmails.isEmpty()) {
+      LOGGER.info("No administrator user accounts configured in app.security.admin-emails.");
+      return;
+    }
 
     Date now = new Date();
-    for (String email : adminEmails) {
+    int count = 0;
+    for (String rawEmail : adminEmails) {
+      if (rawEmail == null || rawEmail.isBlank()) {
+        continue;
+      }
+      String email = rawEmail.trim();
       String emailLower = email.toLowerCase(Locale.ROOT);
       Query query = Query.query(Criteria.where("usernameLower").is(emailLower));
       Update update =
@@ -98,7 +110,8 @@ public class DatabaseDataInitializer implements ApplicationRunner {
               .setOnInsert("lastLoginAt", null);
 
       mongoTemplate.upsert(query, update, "users");
+      count++;
     }
-    LOGGER.info("Initialized {} administrator user accounts in MongoDB.", adminEmails.size());
+    LOGGER.info("Initialized {} administrator user accounts in MongoDB.", count);
   }
 }

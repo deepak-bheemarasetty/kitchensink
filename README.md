@@ -368,7 +368,7 @@ Use the `previousCursor` email as `beforeEmail` to navigate backward. Supply at 
 
 ### Get a member
 
-Returns the member with the requested numeric sequence ID. To get an ID, list the members:
+Returns the member with the requested 24-character hexadecimal MongoDB ObjectId string. To get an ID, list the members:
 
 ```shell
 curl --header 'Authorization: Bearer REPLACE_WITH_ACCESS_TOKEN' 'http://localhost:9080/kitchensink/api/v1/members'
@@ -387,11 +387,15 @@ A successful registration returns `201 Created`, the saved member as JSON, and a
 
 ### MongoDB member schema
 
-- `id` is a `Long` generated from an atomic counter in the `sequences` collection.
-- `name` is required text up to 40 characters; `email` is required text up to 40 characters and must include a dotted domain.
-- `phoneNumber` is required text containing 4 to 15 digits; `countryCode` is a required integer from 1 through 9999.
-- `createdBy` and `lastUpdatedBy` come from the authenticated username; creation and update timestamps and the version are managed by Spring Data MongoDB.
-- Email is trimmed and lowercased before storage, and a unique index enforces uniqueness. Other field constraints are enforced by MongoDB schema validation, not application Bean Validation.
+- `_id` is a MongoDB `ObjectId` primary key serialized as a 24-character hex string.
+- `memberId` is a business identifier (e.g. `M-XXXXXXXXXXXXXXXX`, 3–20 chars matching `^[A-Z0-9-]+$`).
+- `firstName` is required text (1–60 chars); `lastName` is optional text (up to 60 chars); `fullNameLower` stores the lowercase combined name (up to 121 chars) for case-insensitive ordering and search.
+- `email` (3–254 chars) is trimmed and normalized into `emailLower`. Uniqueness is enforced via a partial unique index (`uq_members_email_active`) filtered on `{ deletedAt: null }`.
+- `countryCode` is an optional numeric string (`^[1-9][0-9]{0,3}$`); `phone` is a 6- to 14-digit numeric string without leading zero (`^[1-9][0-9]{5,13}$`).
+- `status` is required with allowed values `active` or `inactive`.
+- Soft deletes are tracked using `deletedAt` (`Instant` / date) and `deletedBy` (`ObjectId`), ensuring soft-deleted member records do not conflict with active unique indexes.
+- Audit fields (`createdAt`, `createdBy`, `updatedAt`, `updatedBy`) and optimistic locking `version` (int >= 1) are maintained automatically by Spring Data MongoDB auditing and event listeners.
+- Compound and covering indexes (`ix_members_name_id`, `ix_members_status_name`, `uq_members_member_id_active`) ensure efficient sorted queries and index-covered lookups. Field constraints and types are enforced via MongoDB JSON schema validation.
 
 REST endpoints accept Auth0 JWT bearer tokens; browser UI requests use the OAuth login session with CSRF protection for state-changing calls. Both authentication paths resolve application permissions from the local users and roles collections. The API enforces permissions for every operation; UI visibility is a usability layer only.
 
