@@ -70,40 +70,37 @@ for (const r of roles) {
 print(`Checked ${roles.length} roles.`);
 
 // 2. Admin Users bootstrap
-// Only admin accounts are seeded here so the initial administrator can log in
-// and manage other user identities via the application UI.
-const adminUsers = [
-  {
-    email: "kitchensink.admin@mail.com",
-    roles: ["admin"],
-    isActive: true
-  },
-  {
-    email: "kitchensink.dbadmin@mail.com",
-    roles: ["admin"],
-    isActive: true
+// Administrator accounts can be specified via environment variable ADMIN_EMAILS (comma-separated),
+// e.g.: ADMIN_EMAILS="admin@example.com,secops@example.com" mongosh "$MONGODB_URI" scripts/seed-users-and-roles.js
+const adminEmailsEnv = typeof process !== "undefined" && process.env && process.env.ADMIN_EMAILS ? process.env.ADMIN_EMAILS : "";
+const adminEmails = adminEmailsEnv
+  .split(",")
+  .map(e => e.trim())
+  .filter(Boolean);
+
+if (adminEmails.length > 0) {
+  print(`Seeding ${adminEmails.length} administrator user account(s) from ADMIN_EMAILS...`);
+  for (const email of adminEmails) {
+    const emailLower = email.toLowerCase();
+    db.users.updateOne(
+      { usernameLower: emailLower },
+      {
+        $setOnInsert: {
+          username: email,
+          usernameLower: emailLower,
+          roles: ["admin"],
+          isActive: true,
+          createdAt: now,
+          updatedAt: now,
+          lastLoginAt: null
+        }
+      },
+      { upsert: true }
+    );
   }
-];
-
-print("Seeding administrator user accounts (insert only if not exists)...");
-for (const u of adminUsers) {
-  const emailLower = u.email.toLowerCase();
-  db.users.updateOne(
-    { usernameLower: emailLower },
-    {
-      $setOnInsert: {
-        username: u.email,
-        usernameLower: emailLower,
-        roles: u.roles,
-        isActive: u.isActive,
-        createdAt: now,
-        updatedAt: now,
-        lastLoginAt: null
-      }
-    },
-    { upsert: true }
-  );
+  print(`Upserted configured admin users.`);
+} else {
+  print("No admin emails provided via ADMIN_EMAILS. Skipping admin user seeding.");
 }
-print(`Upserted ${adminUsers.length} admin users.`);
 
-print("Roles and admin users seeding completed successfully.");
+print("Roles and users script execution completed successfully.");

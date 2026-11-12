@@ -52,7 +52,8 @@ class ConfigComponentsTest {
   @Test
   void databaseDataInitializerSeedsRolesAndUsers() {
     MongoTemplate mongoTemplate = mock(MongoTemplate.class);
-    DatabaseDataInitializer initializer = new DatabaseDataInitializer(mongoTemplate);
+    DatabaseDataInitializer initializer =
+        new DatabaseDataInitializer(mongoTemplate, java.util.List.of("admin@example.com"));
 
     initializer.run(mock(ApplicationArguments.class));
 
