@@ -29,6 +29,27 @@ import org.springframework.security.web.access.intercept.RequestAuthorizationCon
 class ConfigComponentsTest {
 
   @Test
+  void databaseSchemaInitializerCreatesCollectionsIndexesAndValidators() {
+    MongoTemplate mongoTemplate = mock(MongoTemplate.class);
+    org.springframework.data.mongodb.core.index.IndexOperations indexOps =
+        mock(org.springframework.data.mongodb.core.index.IndexOperations.class);
+    org.mockito.Mockito.when(mongoTemplate.indexOps(any(String.class))).thenReturn(indexOps);
+    org.mockito.Mockito.when(mongoTemplate.collectionExists(any(String.class))).thenReturn(false);
+
+    DatabaseSchemaInitializer schemaInitializer = new DatabaseSchemaInitializer(mongoTemplate);
+    schemaInitializer.run(mock(ApplicationArguments.class));
+
+    verify(mongoTemplate).createCollection("members");
+    verify(mongoTemplate).createCollection("users");
+    verify(mongoTemplate).createCollection("roles");
+    verify(mongoTemplate).createCollection("audit_logs");
+    verify(mongoTemplate, org.mockito.Mockito.times(4))
+        .executeCommand(any(org.bson.Document.class));
+    verify(indexOps, org.mockito.Mockito.atLeast(5))
+        .createIndex(any(org.springframework.data.mongodb.core.index.IndexDefinition.class));
+  }
+
+  @Test
   void databaseDataInitializerSeedsRolesAndUsers() {
     MongoTemplate mongoTemplate = mock(MongoTemplate.class);
     DatabaseDataInitializer initializer = new DatabaseDataInitializer(mongoTemplate);

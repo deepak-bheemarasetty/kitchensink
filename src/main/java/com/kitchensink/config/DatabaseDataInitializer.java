@@ -7,6 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.core.annotation.Order;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -20,6 +21,7 @@ import org.springframework.stereotype.Component;
  * @author Deepak Bheemarasetty
  */
 @Component
+@Order(2)
 public class DatabaseDataInitializer implements ApplicationRunner {
   private static final Logger LOGGER = LoggerFactory.getLogger(DatabaseDataInitializer.class);
 
