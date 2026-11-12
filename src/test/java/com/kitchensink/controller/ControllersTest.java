@@ -21,7 +21,6 @@ import org.bson.types.ObjectId;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.index.IndexOperations;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.web.server.ResponseStatusException;
@@ -46,10 +45,8 @@ class ControllersTest {
     mongoTemplate = mock(MongoTemplate.class);
     identityResolver = mock(IdentityResolver.class);
     rolePermissionService = mock(RolePermissionService.class);
-    IndexOperations indexOps = mock(IndexOperations.class);
-    when(mongoTemplate.indexOps("idempotency_keys")).thenReturn(indexOps);
 
-    memberController = new MemberController(memberService, mongoTemplate);
+    memberController = new MemberController(memberService);
     currentUserController = new CurrentUserController(identityResolver, rolePermissionService);
   }
 

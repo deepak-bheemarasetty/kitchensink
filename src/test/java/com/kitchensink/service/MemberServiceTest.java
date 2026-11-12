@@ -123,6 +123,8 @@ class MemberServiceTest {
 
     ObjectId existingId = new ObjectId();
     Document prior = new Document("memberId", existingId);
+    when(mongoTemplate.insert(any(Document.class), eq("idempotency_keys")))
+        .thenThrow(new DuplicateKeyException("key exists"));
     when(mongoTemplate.findOne(any(Query.class), eq(Document.class), eq("idempotency_keys")))
         .thenReturn(prior);
 
@@ -132,6 +134,24 @@ class MemberServiceTest {
 
     Member result = memberService.register(member, "key-prior");
     assertThat(result.getId()).isEqualTo(existingId);
+  }
+
+  @Test
+  void registerIdempotencyKeyConcurrentProcessingThrowsConflict() {
+    Member member = Member.create();
+    member.setFirstName("John");
+    member.setEmail("john.doe@example.com");
+    member.setPhone("2125551212");
+
+    when(mongoTemplate.insert(any(Document.class), eq("idempotency_keys")))
+        .thenThrow(new DuplicateKeyException("key exists"));
+    Document priorProcessing = new Document("memberId", null);
+    when(mongoTemplate.findOne(any(Query.class), eq(Document.class), eq("idempotency_keys")))
+        .thenReturn(priorProcessing);
+
+    assertThatThrownBy(() -> memberService.register(member, "key-processing"))
+        .isInstanceOf(ResponseStatusException.class)
+        .hasMessageContaining("Request with this key is still processing");
   }
 
   @Test

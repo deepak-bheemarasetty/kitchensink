@@ -70,21 +70,36 @@ public class MemberService {
   @Transactional
   public Member register(Member member, String idempotencyKey) {
     requirePermission("member:create");
-    if (idempotencyKey != null && !idempotencyKey.isBlank()) {
-      String validatedKey = Validator.idempotencyKey(idempotencyKey);
-      org.bson.Document prior =
-          mongoTemplate.findOne(
-              Query.query(Criteria.where("key").is(validatedKey)),
-              org.bson.Document.class,
-              "idempotency_keys");
-      if (prior != null) {
-        ObjectId priorMemberId = prior.getObjectId("memberId");
-        Member previous = priorMemberId == null ? null : findById(priorMemberId);
-        if (previous == null) {
-          throw new ResponseStatusException(
-              HttpStatus.CONFLICT, "Request with this key is still processing");
+    String validatedKey =
+        (idempotencyKey != null && !idempotencyKey.isBlank())
+            ? Validator.idempotencyKey(idempotencyKey)
+            : null;
+
+    if (validatedKey != null) {
+      // Reserve the idempotency key first to prevent race conditions from concurrent duplicate
+      // requests
+      try {
+        mongoTemplate.insert(
+            new org.bson.Document("key", validatedKey)
+                .append("memberId", null)
+                .append("createdAt", new Date()),
+            "idempotency_keys");
+      } catch (DuplicateKeyException dke) {
+        // Key was already inserted by a prior or concurrent request
+        org.bson.Document prior =
+            mongoTemplate.findOne(
+                Query.query(Criteria.where("key").is(validatedKey)),
+                org.bson.Document.class,
+                "idempotency_keys");
+        if (prior != null) {
+          ObjectId priorMemberId = prior.getObjectId("memberId");
+          Member previous = priorMemberId == null ? null : findById(priorMemberId);
+          if (previous != null) {
+            return previous;
+          }
         }
-        return previous;
+        throw new ResponseStatusException(
+            HttpStatus.CONFLICT, "Request with this key is still processing");
       }
     }
     member.setFirstName(Validator.firstName(member.getFirstName()));
@@ -113,12 +128,10 @@ public class MemberService {
     member.validate();
     try {
       Member saved = mongoTemplate.insert(member);
-      if (idempotencyKey != null && !idempotencyKey.isBlank()) {
-        String validatedKey = Validator.idempotencyKey(idempotencyKey);
-        mongoTemplate.insert(
-            new org.bson.Document("key", validatedKey)
-                .append("memberId", saved.getId())
-                .append("createdAt", new Date()),
+      if (validatedKey != null) {
+        mongoTemplate.updateFirst(
+            Query.query(Criteria.where("key").is(validatedKey)),
+            org.springframework.data.mongodb.core.query.Update.update("memberId", saved.getId()),
             "idempotency_keys");
       }
       java.util.Map<String, Object> afterDetails = new java.util.LinkedHashMap<>();
@@ -130,6 +143,10 @@ public class MemberService {
       audit("member.create", saved, Map.of("after", afterDetails));
       return saved;
     } catch (DuplicateKeyException exception) {
+      if (validatedKey != null) {
+        mongoTemplate.remove(
+            Query.query(Criteria.where("key").is(validatedKey)), "idempotency_keys");
+      }
       throw new DuplicateEmailException("Email already registered: " + member.getEmail());
     }
   }

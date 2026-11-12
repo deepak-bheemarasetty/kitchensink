@@ -43,9 +43,10 @@ class ConfigComponentsTest {
     verify(mongoTemplate).createCollection("users");
     verify(mongoTemplate).createCollection("roles");
     verify(mongoTemplate).createCollection("audit_logs");
+    verify(mongoTemplate).createCollection("idempotency_keys");
     verify(mongoTemplate, org.mockito.Mockito.times(4))
         .executeCommand(any(org.bson.Document.class));
-    verify(indexOps, org.mockito.Mockito.atLeast(5))
+    verify(indexOps, org.mockito.Mockito.atLeast(7))
         .createIndex(any(org.springframework.data.mongodb.core.index.IndexDefinition.class));
   }
 

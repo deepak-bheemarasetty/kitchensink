@@ -40,6 +40,7 @@ public class DatabaseSchemaInitializer implements ApplicationRunner {
       initializeUsersSchemaAndIndexes();
       initializeRolesSchemaAndIndexes();
       initializeAuditLogsSchemaAndIndexes();
+      initializeIdempotencyKeysSchemaAndIndexes();
       LOGGER.info("Initialized MongoDB collection schema validators and indexes successfully.");
     } catch (Exception ex) {
       LOGGER.warn(
@@ -317,6 +318,19 @@ public class DatabaseSchemaInitializer implements ApplicationRunner {
                 .on("actorId", Sort.Direction.ASC)
                 .on("at", Sort.Direction.DESC)
                 .named("ix_audit_actor_at"));
+  }
+
+  private void initializeIdempotencyKeysSchemaAndIndexes() {
+    ensureCollection("idempotency_keys");
+
+    mongoTemplate
+        .indexOps("idempotency_keys")
+        .createIndex(new Index().on("key", Sort.Direction.ASC).unique());
+
+    mongoTemplate
+        .indexOps("idempotency_keys")
+        .createIndex(
+            new Index().on("createdAt", Sort.Direction.ASC).expire(java.time.Duration.ofHours(24)));
   }
 
   private void ensureCollection(String collectionName) {

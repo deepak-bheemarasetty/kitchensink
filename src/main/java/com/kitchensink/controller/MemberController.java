@@ -8,12 +8,8 @@ import com.kitchensink.service.MemberService;
 import com.kitchensink.service.MemberService.MemberPage;
 import com.kitchensink.validation.Validator;
 import java.net.URI;
-import java.time.Duration;
 import java.util.List;
 import org.bson.types.ObjectId;
-import org.springframework.data.domain.Sort;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.index.Index;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -37,23 +33,14 @@ import org.springframework.web.server.ResponseStatusException;
 @RequestMapping("/api/v1/members")
 public class MemberController {
   private final MemberService memberService;
-  private final MongoTemplate mongoTemplate;
 
   /**
    * Constructs a new member controller.
    *
    * @param memberService member service for business logic
-   * @param mongoTemplate mongo template for persistence operations
    */
-  public MemberController(MemberService memberService, MongoTemplate mongoTemplate) {
+  public MemberController(MemberService memberService) {
     this.memberService = memberService;
-    this.mongoTemplate = mongoTemplate;
-    mongoTemplate
-        .indexOps("idempotency_keys")
-        .createIndex(new Index().on("key", Sort.Direction.ASC).unique());
-    mongoTemplate
-        .indexOps("idempotency_keys")
-        .createIndex(new Index().on("createdAt", Sort.Direction.ASC).expire(Duration.ofHours(24)));
   }
 
   /**
